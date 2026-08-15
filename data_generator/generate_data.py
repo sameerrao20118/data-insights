@@ -2,27 +2,53 @@
 Synthetic commercial/institutional banking dataset generator for a
 Next-Best-Action (NBA) / Event-Based-Marketing (EBM) proof of concept.
 
-This does NOT use any real bank data. It generates a plausible, internally
-consistent client base and multi-year transaction history for European
-commercial and institutional banking clients, with a set of "trigger events"
-deliberately embedded and logged to trigger_events.csv as ground truth.
-That ground-truth file lets you measure precision/recall of any rule engine
-or ML model you later build on top of transactions.csv, without knowing
-the answers in advance from looking at the raw data.
+This does NOT use any real bank data, and does not reproduce raw records
+from any dataset below. The RELATIONAL SCHEMA and the FORMAT of certain
+fields are deliberately modeled on real, publicly documented references so
+the structure resembles what a commercial/institutional banking analytics
+division actually works with, rather than a flat, ad hoc table:
+
+  - Berka / PKDD'99 "Financial Dataset" (Discovery Challenge, 1999) -- real,
+    anonymized Czech retail-bank data, still used across university data
+    mining courses and the CTU Prague Relational Learning Repository. Its
+    normalized structure (client / account / disposition / transaction /
+    loan as separate entities, not one flat table) is the backbone for the
+    clients / accounts / facilities / transactions split here.
+  - Lending Club public loan-level dataset -- widely used in academic
+    credit-risk/ML research; informs facilities.csv (grade-like rating,
+    term, purpose, status) instead of ad hoc "credit draw" rows.
+  - UCI Statlog (German Credit Data) -- canonical academic credit-risk
+    dataset; informs risk_ratings.csv's masterscale structure.
+  - PaySim (Lopez-Rojas et al., 2016) -- synthetic mobile-money transaction
+    methodology widely used in academic fraud-detection research; informs
+    the balance-before/after and counterparty-token conventions.
+  - ISO 20022 External Purpose Code list and the real booking-date vs.
+    value-date convention -- the actual global standard bank payments data
+    engineers key transactions off (not academic, but what real analytics
+    divisions consume from core banking / payment hubs).
+  - IBAN (ISO 7064 MOD 97-10 checksum) and LEI (ISO 17442) -- real public
+    identifier standards. IBANs/LEIs here are structurally valid (correct
+    length, correct check digits) but are NOT registered real identifiers.
+  - Eurostat NACE Rev. 2 -- real EU industry classification; sectors are
+    tagged with real 4-digit codes instead of a single broad letter.
 
 Distributional choices (revenue bands by segment, seasonality, sector mix,
-FX share of SME turnover, typical DSO/payment terms) are loosely calibrated
-to public aggregate statistics (ECB SAFE survey on SME access to finance,
-Eurostat structural business statistics, ECB payments statistics) -- not
-fitted to any real client-level data, which does not exist for us to see.
+SME credit-line prevalence, group-structure prevalence) are loosely
+calibrated to public aggregate statistics (ECB SAFE survey on SME access to
+finance, Eurostat structural business statistics, ECB payments statistics)
+-- not fitted to any real client-level data, which does not exist for us to
+see.
 
 Output: CSV files in ./output/
-    clients.csv
-    accounts.csv
-    transactions.csv
-    trigger_events.csv   (ground truth labels, keep separate from "raw" data
-                           during rule-engine dev -- treat transactions.csv
-                           as the only thing your detector is allowed to see)
+    entity_groups.csv    corporate/institutional group hierarchy
+    clients.csv          legal entities (may belong to a group)
+    accounts.csv         bank accounts (IBAN/BIC, per client)
+    facilities.csv       product holdings: loans, credit lines, trade finance
+    risk_ratings.csv      annual internal credit rating per client
+    transactions.csv      payment-level transaction feed
+    balances.csv           end-of-day balance snapshots (primary accounts)
+    crm_interactions.csv  RM/campaign engagement log (source of ML labels)
+    trigger_events.csv    ground truth trigger labels (evaluation only)
     data_dictionary.md
 """
 
@@ -52,21 +78,22 @@ COUNTRY_WEIGHTS = [0.22, 0.18, 0.10, 0.07, 0.12, 0.11, 0.08, 0.05, 0.04, 0.03]
 CURRENCIES_BY_COUNTRY = {c: "EUR" for c in COUNTRIES}
 CURRENCIES_BY_COUNTRY["PL"] = "PLN"
 
-# Broad NACE-style sector groups with rough revenue/margin/seasonality flavor
-SECTORS = [
-    ("Manufacturing", "C"),
-    ("Wholesale & Retail Trade", "G"),
-    ("Construction", "F"),
-    ("Transportation & Logistics", "H"),
-    ("Professional & Business Services", "M"),
-    ("Information & Communication", "J"),
-    ("Hospitality & Food Service", "I"),
-    ("Health & Social Care", "Q"),
-    ("Real Estate", "L"),
-    ("Public Administration / Institutional", "O"),
-    ("Agriculture & Food Production", "A"),
-    ("Energy & Utilities", "D"),
-]
+# sector name -> (NACE Rev.2 section letter, [plausible real 4-digit NACE codes])
+SECTORS = {
+    "Manufacturing": ("C", ["10.71", "13.20", "22.29", "25.11", "28.99"]),
+    "Wholesale & Retail Trade": ("G", ["45.20", "46.39", "46.90", "47.11"]),
+    "Construction": ("F", ["41.20", "42.11", "43.29"]),
+    "Transportation & Logistics": ("H", ["49.41", "52.10", "53.20"]),
+    "Professional & Business Services": ("M", ["69.20", "70.22", "71.12"]),
+    "Information & Communication": ("J", ["61.10", "62.01", "63.11"]),
+    "Hospitality & Food Service": ("I", ["55.10", "56.10"]),
+    "Health & Social Care": ("Q", ["86.10", "87.30"]),
+    "Real Estate": ("L", ["68.20", "68.31"]),
+    "Public Administration / Institutional": ("O", ["84.11", "84.30"]),
+    "Agriculture & Food Production": ("A", ["01.11", "10.51"]),
+    "Energy & Utilities": ("D", ["35.11", "35.30"]),
+}
+SECTOR_NAMES = list(SECTORS.keys())
 SECTOR_WEIGHTS = [0.16, 0.15, 0.11, 0.08, 0.13, 0.07, 0.06, 0.06, 0.05, 0.04, 0.05, 0.04]
 
 SEGMENTS = ["SME", "Mid-Corporate", "Large-Corporate", "Institutional"]
@@ -88,20 +115,84 @@ SEASONAL_SECTORS = {
     "Energy & Utilities": "winter_peak",
 }
 
+# fictitious bank brands (NOT real bank BIC codes) used to build structurally
+# valid-looking BICs, e.g. "NOVADEXX"
+FICTITIOUS_BANK_CODES = ["NOVA", "AURA", "VELO", "AXIO", "UNIO",
+                          "PRIMA", "NORD", "SOLI", "METR", "CIVI"]
+
+# real ISO 20022 External Purpose Code values, mapped from our transaction
+# categories (https://www.iso20022.org/catalogue-messages/additional-content-issue-type/external-code-sets)
+ISO20022_PURPOSE_CODE = {
+    "supplier_payment": "SUPP",
+    "payroll": "SALA",
+    "tax_payment": "TAXS",
+    "rent_lease": "RENT",
+    "loan_repayment": "LOAN",
+    "utilities": "UBIL",
+    "professional_fees": "SCVE",
+    "fx_payment": "FREX",
+    "customer_receipt": "GDDS",
+    "contract_payment": "TRAD",
+    "grant_subsidy": "GOVT",
+    "loan_disbursement": "LOAN",
+    "interest_income": "INTE",
+    "refund": "RREF",
+}
+
+# real value-date lag conventions by payment channel (settlement, not booking)
+VALUE_DATE_LAG_DAYS = {
+    "SEPA_CREDIT_TRANSFER": 1,
+    "SWIFT": 2,
+    "CARD": 0,
+    "DIRECT_DEBIT": 1,
+    "INTERNAL": 0,
+}
+
+
+def _iso7064_check_digits(alnum: str) -> str:
+    """ISO 7064 MOD 97-10 check digits, used by both IBAN and LEI."""
+    numeric = "".join(str(int(ch, 36)) for ch in alnum)
+    remainder = int(numeric) % 97
+    return f"{98 - remainder:02d}"
+
+
+def gen_iban(country: str) -> str:
+    """Structurally valid IBAN (correct length + real MOD 97-10 checksum),
+    not a registered real account number."""
+    bban_len = {"DE": 18, "FR": 23, "NL": 14, "BE": 12, "ES": 20,
+                "IT": 23, "PL": 24, "AT": 16, "PT": 21, "IE": 18}[country]
+    if country in ("NL", "IE"):
+        letters = "".join(rng.choice(list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")) for _ in range(4))
+        digits = "".join(str(int(rng.integers(0, 10))) for _ in range(bban_len - 4))
+        bban = letters + digits
+    elif country == "IT":
+        letter = rng.choice(list("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+        digits = "".join(str(int(rng.integers(0, 10))) for _ in range(bban_len - 1))
+        bban = letter + digits
+    else:
+        bban = "".join(str(int(rng.integers(0, 10))) for _ in range(bban_len))
+    check = _iso7064_check_digits(bban + country + "00")
+    return f"{country}{check}{bban}"
+
+
+def gen_bic(country: str) -> str:
+    brand = rng.choice(FICTITIOUS_BANK_CODES)
+    location = "".join(rng.choice(list("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")) for _ in range(2))
+    return f"{brand}{country}{location}"
+
+
+def gen_lei() -> str:
+    """Structurally valid LEI (correct length + real MOD 97-10 checksum
+    per ISO 17442), not a GLEIF-registered real identifier."""
+    lou_prefix = rng.choice(["5299", "7245", "2138", "5493", "3157", "8945"])
+    alnum = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    entity_part = "".join(rng.choice(list(alnum)) for _ in range(14))
+    base18 = lou_prefix + entity_part
+    check = _iso7064_check_digits(base18 + "00")
+    return base18 + check
+
 
 def business_name(sector_name):
-    suffixes = {
-        "DE": ["GmbH", "AG", "GmbH & Co. KG"],
-        "FR": ["SARL", "SAS", "SA"],
-        "NL": ["B.V.", "N.V."],
-        "BE": ["BVBA", "SA"],
-        "ES": ["S.L.", "S.A."],
-        "IT": ["S.r.l.", "S.p.A."],
-        "PL": ["Sp. z o.o.", "S.A."],
-        "AT": ["GmbH", "AG"],
-        "PT": ["Lda.", "S.A."],
-        "IE": ["Ltd", "DAC"],
-    }
     return fake.company()
 
 
@@ -124,23 +215,82 @@ def daterange(d0, d1):
         yield d0 + timedelta(days=i)
 
 
+def add_business_days(d: date, n: int) -> date:
+    cur = d
+    while n > 0:
+        cur += timedelta(days=1)
+        if cur.weekday() < 5:
+            n -= 1
+    return cur
+
+
 # ----------------------------------------------------------------------
-# 1. Clients
+# 1. Entity groups (corporate/institutional hierarchy) -- most real
+#    corporate/institutional NBA decisions are made at group, not single
+#    legal-entity, level.
+# ----------------------------------------------------------------------
+GROUP_MEMBERSHIP_PROB = {
+    "SME": 0.10, "Mid-Corporate": 0.25, "Large-Corporate": 0.55, "Institutional": 0.05,
+}
+
+
+def assign_groups(clients: pd.DataFrame):
+    pool = []
+    for _, c in clients.iterrows():
+        if rng.random() < GROUP_MEMBERSHIP_PROB[c["segment"]]:
+            pool.append(c["client_id"])
+    rng.shuffle(np.array(pool, dtype=object)) if pool else None
+    pool = list(rng.permutation(pool)) if pool else []
+
+    groups = []
+    membership = {}  # client_id -> (group_id, role, ownership_pct)
+    i = 0
+    gnum = 0
+    while i < len(pool):
+        size = int(rng.integers(2, 5))
+        chunk = pool[i:i + size]
+        i += size
+        if len(chunk) < 2:
+            break
+        gnum += 1
+        group_id = f"GRP{gnum:04d}"
+        parent_id = chunk[0]
+        parent_row = clients[clients["client_id"] == parent_id].iloc[0]
+        group_name = f"{parent_row['legal_name'].split(',')[0]} Group"
+        group_type = "institutional_consolidation" if parent_row["segment"] == "Institutional" \
+            else "corporate_group"
+        groups.append({
+            "group_id": group_id,
+            "group_name": group_name,
+            "ultimate_parent_client_id": parent_id,
+            "ultimate_parent_country": parent_row["country"],
+            "group_type": group_type,
+            "member_count": len(chunk),
+        })
+        membership[parent_id] = (group_id, "ultimate_parent", 100.0)
+        for sub in chunk[1:]:
+            membership[sub] = (group_id, "subsidiary", round(float(rng.uniform(51, 100)), 1))
+    return pd.DataFrame(groups), membership
+
+
+# ----------------------------------------------------------------------
+# 2. Clients
 # ----------------------------------------------------------------------
 def gen_clients():
     rows = []
     for i in range(N_CLIENTS):
         client_id = f"CL{i:05d}"
         country = rng.choice(COUNTRIES, p=COUNTRY_WEIGHTS)
-        sector_name, nace = SECTORS[rng.choice(len(SECTORS), p=SECTOR_WEIGHTS)]
+        sector_idx = rng.choice(len(SECTOR_NAMES), p=SECTOR_WEIGHTS)
+        sector_name = SECTOR_NAMES[sector_idx]
+        nace_section, nace_codes = SECTORS[sector_name]
+        nace_4digit = rng.choice(nace_codes)
         segment = rng.choice(SEGMENTS, p=SEGMENT_WEIGHTS)
         if sector_name == "Public Administration / Institutional":
             segment = "Institutional"
 
         lo, hi = SEGMENT_REVENUE_BANDS_EUR[segment]
-        annual_revenue = float(rng.lognormal(
-            mean=np.log(np.sqrt(lo * hi)), sigma=0.4
-        ))
+        annual_revenue = float(rng.lognormal(mean=np.log(np.sqrt(lo * hi)), sigma=0.4))
         annual_revenue = float(np.clip(annual_revenue, lo, hi))
 
         onboarding_days_back = rng.integers(30, (END_DATE - START_DATE).days + 365 * 5)
@@ -148,13 +298,20 @@ def gen_clients():
             if onboarding_days_back > (END_DATE - START_DATE).days else \
             START_DATE + timedelta(days=int(rng.integers(0, (END_DATE - START_DATE).days // 2)))
 
-        # relationship tenure biases how "known" the client's baseline pattern is
+        # LEI adoption in reality skews heavily to larger/regulated entities
+        # (EMIR/MiFID II-scoped) -- most SMEs never obtain one
+        lei_prob = {"SME": 0.15, "Mid-Corporate": 0.55, "Large-Corporate": 0.95,
+                    "Institutional": 0.85}[segment]
+        has_lei = rng.random() < lei_prob
+
         rows.append({
             "client_id": client_id,
             "legal_name": business_name(sector_name),
+            "lei": gen_lei() if has_lei else "",
             "segment": segment,
             "sector": sector_name,
-            "nace_section": nace,
+            "nace_section": nace_section,
+            "nace_code": nace_4digit,
             "country": country,
             "currency_home": CURRENCIES_BY_COUNTRY[country],
             "annual_revenue_eur_est": round(annual_revenue, 2),
@@ -162,11 +319,19 @@ def gen_clients():
             "relationship_manager_id": f"RM{int(rng.integers(1, 26)):03d}",
             "seasonality_pattern": SEASONAL_SECTORS.get(sector_name, "none"),
         })
-    return pd.DataFrame(rows)
+    clients = pd.DataFrame(rows)
+
+    groups_df, membership = assign_groups(clients)
+    clients["group_id"] = clients["client_id"].map(lambda cid: membership.get(cid, (None, None, None))[0])
+    clients["group_role"] = clients["client_id"].map(
+        lambda cid: membership.get(cid, (None, "standalone", None))[1])
+    clients["group_ownership_pct"] = clients["client_id"].map(
+        lambda cid: membership.get(cid, (None, None, None))[2])
+    return clients, groups_df
 
 
 # ----------------------------------------------------------------------
-# 2. Accounts
+# 3. Accounts
 # ----------------------------------------------------------------------
 def gen_accounts(clients: pd.DataFrame):
     rows = []
@@ -180,6 +345,13 @@ def gen_accounts(clients: pd.DataFrame):
             # ~45% of SMEs carry a second account (overdraft/credit facility or savings) --
             # roughly in line with ECB SAFE survey findings on SME use of bank credit lines
             n_accounts = 2 if rng.random() < 0.45 else 1
+
+        # multi-banking: larger clients often hold accounts at more than one
+        # bank brand -- a real, common corporate-treasury behavior
+        n_banks = 1
+        if c["segment"] in ("Large-Corporate", "Institutional"):
+            n_banks = int(rng.integers(1, 3))
+        client_banks = [gen_bic(c["country"]) for _ in range(n_banks)]
 
         for a in range(n_accounts):
             account_id = f"{c['client_id']}-A{a}"
@@ -195,9 +367,12 @@ def gen_accounts(clients: pd.DataFrame):
             rows.append({
                 "account_id": account_id,
                 "client_id": c["client_id"],
+                "iban": gen_iban(c["country"]),
+                "bic": client_banks[a % len(client_banks)],
                 "currency": currency,
                 "account_type": account_type,
                 "is_primary": is_main,
+                "account_status": "active",
                 "credit_limit": credit_limit,
                 "open_date": c["onboarding_date"],
             })
@@ -205,7 +380,123 @@ def gen_accounts(clients: pd.DataFrame):
 
 
 # ----------------------------------------------------------------------
-# 3. Transactions + embedded trigger events
+# 4. Facilities (product holdings) -- modeled on public loan-level datasets
+#    (e.g. Lending Club: amount, term, rate, grade-like status, purpose)
+#    adapted to corporate/institutional products.
+# ----------------------------------------------------------------------
+FACILITY_TYPES_BY_SEGMENT = {
+    "SME": ["overdraft", "term_loan"],
+    "Mid-Corporate": ["term_loan", "revolving_credit_facility", "trade_finance_lc", "bank_guarantee"],
+    "Large-Corporate": ["term_loan", "revolving_credit_facility", "trade_finance_lc",
+                         "bank_guarantee", "fx_forward_line", "syndicated_term_loan"],
+    "Institutional": ["term_loan", "revolving_credit_facility", "bank_guarantee"],
+}
+FACILITY_PURPOSES = ["working_capital", "equipment_finance", "real_estate",
+                      "trade_finance", "general_corporate", "refinancing"]
+N_FACILITIES_LAMBDA = {"SME": 0.8, "Mid-Corporate": 1.6, "Large-Corporate": 2.8, "Institutional": 1.4}
+
+
+def gen_facilities(clients: pd.DataFrame, accounts: pd.DataFrame):
+    rows = []
+    fnum = 0
+    for _, c in clients.iterrows():
+        client_accounts = accounts[accounts["client_id"] == c["client_id"]]
+        credit_accounts = client_accounts[client_accounts["account_type"] == "credit_facility"]
+        n_fac = int(rng.poisson(N_FACILITIES_LAMBDA[c["segment"]]))
+        types = FACILITY_TYPES_BY_SEGMENT[c["segment"]]
+        onboarding = date.fromisoformat(c["onboarding_date"])
+        credit_acc_used = False
+
+        for _ in range(n_fac):
+            fnum += 1
+            facility_id = f"FAC{fnum:06d}"
+            ftype = rng.choice(types)
+            linked_account = ""
+            if ftype in ("overdraft", "revolving_credit_facility") and not credit_accounts.empty \
+                    and not credit_acc_used:
+                linked_account = credit_accounts.iloc[0]["account_id"]
+                limit_amount = float(credit_accounts.iloc[0]["credit_limit"])
+                credit_acc_used = True
+            else:
+                limit_amount = round(c["annual_revenue_eur_est"] * rng.uniform(0.03, 0.20), 2)
+
+            origination = max(onboarding, START_DATE - timedelta(days=int(rng.integers(0, 365 * 4))))
+            term_years = int(rng.integers(1, 8))
+            maturity = date(origination.year + term_years, origination.month, min(origination.day, 28))
+            status = "active"
+            if maturity < START_DATE:
+                status = rng.choice(["matured", "refinanced"])
+            elif maturity < END_DATE and rng.random() < 0.1:
+                status = "closed"
+
+            utilization = rng.uniform(0.1, 0.85) if ftype in ("overdraft", "revolving_credit_facility") else 1.0
+            outstanding = round(limit_amount * utilization, 2) if status == "active" else 0.0
+
+            rows.append({
+                "facility_id": facility_id,
+                "client_id": c["client_id"],
+                "linked_account_id": linked_account,
+                "product_type": ftype,
+                "purpose": rng.choice(FACILITY_PURPOSES),
+                "currency": c["currency_home"],
+                "original_amount": limit_amount,
+                "outstanding_balance": outstanding,
+                "interest_rate_pct": round(float(rng.uniform(2.5, 8.5)), 2),
+                "origination_date": origination.isoformat(),
+                "maturity_date": maturity.isoformat(),
+                "status": status,
+                "collateralized": bool(rng.random() < (0.6 if c["segment"] == "SME" else 0.35)),
+            })
+    return pd.DataFrame(rows)
+
+
+# ----------------------------------------------------------------------
+# 5. Risk ratings -- internal masterscale, informed by academic credit-risk
+#    dataset conventions (UCI German Credit / Lending Club "grade").
+#    Grade 1 = best (~investment grade), Grade 10 = default-adjacent.
+# ----------------------------------------------------------------------
+PD_BY_GRADE = {1: 0.03, 2: 0.06, 3: 0.12, 4: 0.25, 5: 0.55,
+               6: 1.2, 7: 2.8, 8: 6.5, 9: 12.0, 10: 22.0}
+SEGMENT_BASE_GRADE = {"Institutional": 3, "Large-Corporate": 4, "Mid-Corporate": 5, "SME": 6}
+
+
+def gen_risk_ratings(clients: pd.DataFrame, trigger_log: list):
+    stress_clients = {t["client_id"] for t in trigger_log if t["trigger_type"] == "CASHFLOW_STRESS"}
+    stress_dates = {t["client_id"]: date.fromisoformat(t["event_date"])
+                    for t in trigger_log if t["trigger_type"] == "CASHFLOW_STRESS"}
+
+    rows = []
+    rnum = 0
+    for _, c in clients.iterrows():
+        onboarding = date.fromisoformat(c["onboarding_date"])
+        base_grade = SEGMENT_BASE_GRADE[c["segment"]] + int(rng.integers(-1, 2))
+        base_grade = int(np.clip(base_grade, 1, 9))
+
+        review_year = max(onboarding.year, START_DATE.year)
+        while review_year <= END_DATE.year:
+            rating_date = date(review_year, 3, 31)  # annual review cadence
+            if rating_date < onboarding or rating_date > END_DATE:
+                review_year += 1
+                continue
+            grade = base_grade
+            if c["client_id"] in stress_clients and rating_date > stress_dates[c["client_id"]]:
+                grade = min(10, base_grade + int(rng.integers(1, 3)))
+            watchlist = grade >= 8 and rng.random() < 0.4
+            rnum += 1
+            rows.append({
+                "rating_id": f"RTG{rnum:06d}",
+                "client_id": c["client_id"],
+                "rating_date": rating_date.isoformat(),
+                "internal_rating_grade": grade,
+                "pd_1y_pct": PD_BY_GRADE[grade],
+                "watchlist_flag": watchlist,
+            })
+            review_year += 1
+    return pd.DataFrame(rows)
+
+
+# ----------------------------------------------------------------------
+# 6. Transactions + embedded trigger events
 # ----------------------------------------------------------------------
 TX_CATEGORIES_OUT = [
     "supplier_payment", "payroll", "tax_payment", "rent_lease",
@@ -217,6 +508,26 @@ TX_CATEGORIES_IN = [
 ]
 
 
+def remittance_text(category, counterparty):
+    templates = {
+        "supplier_payment": f"INV-{int(rng.integers(10000,99999))} {counterparty}",
+        "payroll": f"Payroll run {rng.integers(1,13):02d}/{rng.integers(2023,2026)}",
+        "tax_payment": "Corporate tax settlement",
+        "rent_lease": "Lease payment",
+        "loan_repayment": "Loan instalment",
+        "utilities": "Utility bill settlement",
+        "professional_fees": "Professional services fee",
+        "fx_payment": "FX settlement",
+        "customer_receipt": f"Payment ref {counterparty}",
+        "contract_payment": "Contract/tender payment",
+        "grant_subsidy": "Public grant disbursement",
+        "loan_disbursement": "Facility drawdown",
+        "interest_income": "Interest credit",
+        "refund": "Refund",
+    }
+    return templates.get(category, "")
+
+
 def gen_transactions_for_client(client, accounts_for_client, trigger_log):
     daily_revenue = client["annual_revenue_eur_est"] / 365.0
     pattern = client["seasonality_pattern"]
@@ -226,14 +537,11 @@ def gen_transactions_for_client(client, accounts_for_client, trigger_log):
     rows = []
     balance = daily_revenue * rng.uniform(15, 45)  # starting buffer
 
-    # baseline number of counterparties
     n_customers = max(3, int(rng.integers(4, 30)))
     n_suppliers = max(2, int(rng.integers(3, 20)))
     customers = [f"CTP-CUST-{client['client_id']}-{i}" for i in range(n_customers)]
     suppliers = [f"CTP-SUPP-{client['client_id']}-{i}" for i in range(n_suppliers)]
 
-    # ---- decide which trigger events (if any) this client will get ----
-    possible_triggers = []
     onboarding = date.fromisoformat(client["onboarding_date"])
     active_start = max(START_DATE, onboarding)
     active_days = (END_DATE - active_start).days
@@ -312,16 +620,33 @@ def gen_transactions_for_client(client, accounts_for_client, trigger_log):
     def in_window(d, window):
         return window is not None and window[0] <= d <= window[1]
 
+    def make_row(account_id, d, amount, currency, category, counterparty, channel, bal_after):
+        return {
+            "transaction_id": str(uuid.uuid4()),
+            "account_id": account_id,
+            "client_id": client["client_id"],
+            "booking_date": d.isoformat(),
+            "value_date": add_business_days(d, VALUE_DATE_LAG_DAYS.get(channel, 1)).isoformat(),
+            "amount": round(amount, 2),
+            "currency": currency,
+            "direction": "credit" if amount > 0 else "debit",
+            "category": category,
+            "iso20022_purpose_code": ISO20022_PURPOSE_CODE.get(category, "OTHR"),
+            "counterparty_id": counterparty,
+            "channel": channel,
+            "remittance_info": remittance_text(category, counterparty),
+            "balance_after": round(bal_after, 2),
+        }
+
     for d in daterange(active_start, END_DATE):
         if d.weekday() >= 5 and rng.random() < 0.85:
-            continue  # mostly quiet on weekends
+            continue
 
         if dormant_start and dormant_start <= d <= dormant_end and rng.random() < 0.97:
-            continue  # dormancy window: almost no activity
+            continue
 
         season_mult = seasonal_multiplier(d, pattern)
         stress_mult = 0.55 if in_window(d, stress_window) else 1.0
-        surplus_mult = 1.0
 
         n_tx_today = rng.poisson(lam=1.3 * season_mult * stress_mult)
         for _ in range(n_tx_today):
@@ -329,7 +654,7 @@ def gen_transactions_for_client(client, accounts_for_client, trigger_log):
             if is_inflow:
                 base = daily_revenue * rng.uniform(0.3, 1.8) * season_mult
                 if recurring_rev_start and d >= recurring_rev_start:
-                    base *= 1.15  # new recurring receivable layered in
+                    base *= 1.15
                 category = rng.choice(TX_CATEGORIES_IN, p=[0.72, 0.06, 0.03, 0.05, 0.05, 0.09])
                 counterparty = rng.choice(customers)
                 amount = round(base, 2)
@@ -349,74 +674,31 @@ def gen_transactions_for_client(client, accounts_for_client, trigger_log):
                 counterparty = big_new_counterparty
                 amount = amount * rng.uniform(1.5, 3.0) if amount > 0 else amount
 
+            channel = rng.choice(["SEPA_CREDIT_TRANSFER", "SWIFT", "CARD", "DIRECT_DEBIT"],
+                                  p=[0.6, 0.1, 0.1, 0.2])
             balance += amount
-            rows.append({
-                "transaction_id": str(uuid.uuid4()),
-                "account_id": primary_account["account_id"],
-                "client_id": client["client_id"],
-                "date": d.isoformat(),
-                "amount": round(amount, 2),
-                "currency": currency,
-                "direction": "credit" if amount > 0 else "debit",
-                "category": category,
-                "counterparty_id": counterparty,
-                "channel": rng.choice(["SEPA_CREDIT_TRANSFER", "SWIFT", "CARD", "DIRECT_DEBIT"],
-                                       p=[0.6, 0.1, 0.1, 0.2]),
-                "balance_after": round(balance, 2),
-            })
+            rows.append(make_row(primary_account["account_id"], d, amount, currency,
+                                  category, counterparty, channel, balance))
 
-        # tender / one-off lump sum payment
         if tender_date == d:
             balance += tender_amount
-            rows.append({
-                "transaction_id": str(uuid.uuid4()),
-                "account_id": primary_account["account_id"],
-                "client_id": client["client_id"],
-                "date": d.isoformat(),
-                "amount": round(tender_amount, 2),
-                "currency": client["currency_home"],
-                "direction": "credit",
-                "category": "contract_payment",
-                "counterparty_id": rng.choice(customers),
-                "channel": "SEPA_CREDIT_TRANSFER",
-                "balance_after": round(balance, 2),
-            })
+            rows.append(make_row(primary_account["account_id"], d, tender_amount,
+                                  client["currency_home"], "contract_payment",
+                                  rng.choice(customers), "SEPA_CREDIT_TRANSFER", balance))
 
-        # treasury surplus: parked idle cash sits, occasionally topped up
         if in_window(d, surplus_window) and rng.random() < 0.08:
             topup = daily_revenue * rng.uniform(3, 8)
             balance += topup
-            rows.append({
-                "transaction_id": str(uuid.uuid4()),
-                "account_id": primary_account["account_id"],
-                "client_id": client["client_id"],
-                "date": d.isoformat(),
-                "amount": round(topup, 2),
-                "currency": client["currency_home"],
-                "direction": "credit",
-                "category": "customer_receipt",
-                "counterparty_id": rng.choice(customers),
-                "channel": "SEPA_CREDIT_TRANSFER",
-                "balance_after": round(balance, 2),
-            })
+            rows.append(make_row(primary_account["account_id"], d, topup,
+                                  client["currency_home"], "customer_receipt",
+                                  rng.choice(customers), "SEPA_CREDIT_TRANSFER", balance))
 
-        # credit facility utilization spike
         if credit_spike_window and in_window(d, credit_spike_window) and rng.random() < 0.15 \
                 and not credit_accounts.empty:
             draw = float(credit_accounts.iloc[0]["credit_limit"]) * rng.uniform(0.1, 0.3)
-            rows.append({
-                "transaction_id": str(uuid.uuid4()),
-                "account_id": credit_accounts.iloc[0]["account_id"],
-                "client_id": client["client_id"],
-                "date": d.isoformat(),
-                "amount": round(draw, 2),
-                "currency": client["currency_home"],
-                "direction": "credit",
-                "category": "loan_disbursement",
-                "counterparty_id": "INTERNAL_CREDIT_FACILITY",
-                "channel": "INTERNAL",
-                "balance_after": round(balance + draw, 2),
-            })
+            rows.append(make_row(credit_accounts.iloc[0]["account_id"], d, draw,
+                                  client["currency_home"], "loan_disbursement",
+                                  "INTERNAL_CREDIT_FACILITY", "INTERNAL", balance + draw))
 
     for t in assigned_triggers:
         trigger_log.append({
@@ -439,31 +721,144 @@ def gen_transactions(clients: pd.DataFrame, accounts: pd.DataFrame):
 
 
 # ----------------------------------------------------------------------
+# 7. Balances -- end-of-day snapshots on primary accounts, separate from
+#    the transaction-level running balance. Real banking data warehouses
+#    almost always expose EOD balance as its own fact table rather than
+#    expecting consumers to reconstruct it from a raw transaction feed.
+# ----------------------------------------------------------------------
+def gen_balances(transactions: pd.DataFrame, accounts: pd.DataFrame):
+    primary_ids = set(accounts[accounts["is_primary"]]["account_id"])
+    tx = transactions[transactions["account_id"].isin(primary_ids)].copy()
+    tx["booking_date"] = pd.to_datetime(tx["booking_date"])
+
+    rows = []
+    for account_id, grp in tx.groupby("account_id"):
+        daily_close = grp.sort_values("booking_date").groupby("booking_date")["balance_after"].last()
+        full_idx = pd.date_range(daily_close.index.min(), daily_close.index.max(), freq="D")
+        closing = daily_close.reindex(full_idx).ffill()
+        opening = closing.shift(1).fillna(closing.iloc[0])
+        for dt, close_bal, open_bal in zip(full_idx, closing.values, opening.values):
+            rows.append({
+                "account_id": account_id,
+                "date": dt.date().isoformat(),
+                "opening_balance": round(float(open_bal), 2),
+                "closing_balance": round(float(close_bal), 2),
+            })
+    return pd.DataFrame(rows)
+
+
+# ----------------------------------------------------------------------
+# 8. CRM / campaign interactions -- source of the "did this trigger
+#    convert" label an ML scoring model would need; without this table
+#    there is no honest way to generate training labels from data alone.
+# ----------------------------------------------------------------------
+OFFER_BY_TRIGGER = {
+    "TENDER_PAYMENT": "trade_finance_facility",
+    "CASHFLOW_STRESS": "overdraft_extension",
+    "FX_EXPOSURE_NEW": "fx_hedging_product",
+    "TREASURY_SURPLUS": "term_deposit",
+    "NEW_COUNTERPARTY_CONCENTRATION": "cash_management_product",
+    "CREDIT_UTILIZATION_SPIKE": "credit_line_review",
+    "DORMANT_REACTIVATION": "relationship_review",
+    "RECURRING_REVENUE_ESTABLISHED": "collections_product",
+}
+CHANNELS = ["RM_call", "branch_meeting", "email_campaign", "digital_portal_offer"]
+
+
+def gen_crm_interactions(triggers: pd.DataFrame, clients: pd.DataFrame):
+    rows = []
+    inum = 0
+    for _, t in triggers.iterrows():
+        if rng.random() >= 0.75:
+            continue
+        inum += 1
+        event_date = date.fromisoformat(t["event_date"])
+        interaction_date = event_date + timedelta(days=int(rng.integers(3, 26)))
+        if interaction_date > END_DATE:
+            continue
+        outcome = rng.choice(["accepted", "declined", "no_response", "pending"],
+                              p=[0.32, 0.28, 0.30, 0.10])
+        rows.append({
+            "interaction_id": f"INT{inum:06d}",
+            "client_id": t["client_id"],
+            "date": interaction_date.isoformat(),
+            "channel": rng.choice(CHANNELS),
+            "campaign_id": f"CMP-{interaction_date.year}-{OFFER_BY_TRIGGER[t['trigger_type']]}",
+            "offer_type": OFFER_BY_TRIGGER[t["trigger_type"]],
+            "linked_trigger_type": t["trigger_type"],
+            "outcome": outcome,
+        })
+
+    # baseline routine relationship-management noise, unrelated to any trigger
+    n_noise = 150
+    client_ids = clients["client_id"].values
+    for _ in range(n_noise):
+        inum += 1
+        cid = rng.choice(client_ids)
+        d = START_DATE + timedelta(days=int(rng.integers(0, (END_DATE - START_DATE).days)))
+        rows.append({
+            "interaction_id": f"INT{inum:06d}",
+            "client_id": cid,
+            "date": d.isoformat(),
+            "channel": rng.choice(CHANNELS),
+            "campaign_id": f"CMP-{d.year}-generic_relationship",
+            "offer_type": "generic_relationship_review",
+            "linked_trigger_type": "",
+            "outcome": rng.choice(["accepted", "declined", "no_response", "pending"],
+                                   p=[0.12, 0.30, 0.48, 0.10]),
+        })
+    return pd.DataFrame(rows)
+
+
+# ----------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
 
-    print("Generating clients...")
-    clients = gen_clients()
+    print("Generating clients + entity groups...")
+    clients, groups = gen_clients()
 
     print("Generating accounts...")
     accounts = gen_accounts(clients)
 
+    print("Generating facilities (product holdings)...")
+    facilities = gen_facilities(clients, accounts)
+
     print("Generating transactions (this can take a minute)...")
     transactions, triggers = gen_transactions(clients, accounts)
-    transactions = transactions.sort_values(["client_id", "date"]).reset_index(drop=True)
+    transactions = transactions.sort_values(["client_id", "booking_date"]).reset_index(drop=True)
 
+    print("Deriving end-of-day balances...")
+    balances = gen_balances(transactions, accounts)
+
+    print("Generating risk ratings...")
+    trigger_log_records = triggers.to_dict("records")
+    risk_ratings = gen_risk_ratings(clients, trigger_log_records)
+
+    print("Generating CRM/campaign interactions...")
+    crm_interactions = gen_crm_interactions(triggers, clients)
+
+    groups.to_csv(os.path.join(OUT_DIR, "entity_groups.csv"), index=False)
     clients.to_csv(os.path.join(OUT_DIR, "clients.csv"), index=False)
     accounts.to_csv(os.path.join(OUT_DIR, "accounts.csv"), index=False)
+    facilities.to_csv(os.path.join(OUT_DIR, "facilities.csv"), index=False)
+    risk_ratings.to_csv(os.path.join(OUT_DIR, "risk_ratings.csv"), index=False)
     transactions.to_csv(os.path.join(OUT_DIR, "transactions.csv"), index=False)
+    balances.to_csv(os.path.join(OUT_DIR, "balances.csv"), index=False)
+    crm_interactions.to_csv(os.path.join(OUT_DIR, "crm_interactions.csv"), index=False)
     triggers.sort_values(["client_id", "event_date"]).to_csv(
         os.path.join(OUT_DIR, "trigger_events.csv"), index=False
     )
 
-    print(f"Clients:      {len(clients):>8,}")
-    print(f"Accounts:     {len(accounts):>8,}")
-    print(f"Transactions: {len(transactions):>8,}")
+    print(f"Entity groups:      {len(groups):>8,}")
+    print(f"Clients:            {len(clients):>8,}")
+    print(f"Accounts:           {len(accounts):>8,}")
+    print(f"Facilities:         {len(facilities):>8,}")
+    print(f"Risk ratings:       {len(risk_ratings):>8,}")
+    print(f"Transactions:       {len(transactions):>8,}")
+    print(f"Balances (EOD):     {len(balances):>8,}")
+    print(f"CRM interactions:   {len(crm_interactions):>8,}")
     print(f"Trigger events (ground truth): {len(triggers):>8,}")
     print(f"Written to {OUT_DIR}/")
 

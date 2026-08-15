@@ -14,8 +14,14 @@ for why, and how the synthetic data is grounded in public statistics instead.
 ## Status
 
 - [x] **Synthetic data generator** — `data_generator/generate_data.py`
-      produces a 3-year, 300-client commercial/institutional transaction
-      dataset with embedded, labeled trigger events for later evaluation.
+      produces a 3-year, 300-client commercial/institutional dataset:
+      entity groups, clients, accounts, product holdings (facilities),
+      internal risk ratings, transactions, EOD balances, and CRM/campaign
+      interactions — with embedded, labeled trigger events held out for
+      evaluation. Schema is modeled on real academic/industry references
+      (Berka/PKDD'99 financial dataset, Lending Club, UCI German Credit,
+      ISO 20022, IBAN/LEI checksums, Eurostat NACE) — see the data
+      dictionary for the full mapping.
 - [ ] Rule-based trigger detection engine
 - [ ] ML opportunity scoring/ranking model
 - [ ] Excel/email digest output
@@ -38,15 +44,22 @@ python data_generator/generate_data.py
 
 Writes to `data_generator/output/`:
 
-- `clients.csv` — 300 synthetic commercial/institutional clients
-- `accounts.csv` — client accounts (current, savings, credit facility)
-- `transactions.csv` — ~297k transactions, 2023-01-01 to 2025-12-31
+- `entity_groups.csv` — corporate/institutional group hierarchy
+- `clients.csv` — 300 synthetic commercial/institutional clients (LEI, NACE 4-digit, group membership)
+- `accounts.csv` — client accounts with structurally valid IBAN/BIC
+- `facilities.csv` — product holdings (loans, credit lines, trade finance, guarantees)
+- `risk_ratings.csv` — annual internal credit rating per client
+- `transactions.csv` — ~294k transactions, 2023-01-01 to 2025-12-31, booking/value date + ISO 20022 purpose codes
+- `balances.csv` — end-of-day balance snapshots, primary accounts
+- `crm_interactions.csv` — RM/campaign engagement log (source of future ML training labels)
 - `trigger_events.csv` — **ground truth** trigger labels, held separate from
-  transactions.csv so you can measure precision/recall of any detector built
+  everything else so you can measure precision/recall of any detector built
   on top of it without peeking at the answer key
-- `data_dictionary.md` — full schema + trigger-type rationale
+- `data_dictionary.md` — full schema, trigger-type rationale, and the
+  real academic/industry references each part of the schema is modeled on
 
 ## Next step
 
-Build the rule-based trigger detection engine against `transactions.csv`,
-then score it against `trigger_events.csv`.
+Build the rule-based trigger detection engine against `transactions.csv`
+(and now `facilities.csv` / `balances.csv`), then score it against
+`trigger_events.csv`.
