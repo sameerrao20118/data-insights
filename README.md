@@ -44,12 +44,12 @@ python data_generator/generate_data.py
 
 Writes to `data_generator/output/`:
 
-- `entity_groups.csv` — corporate/institutional group hierarchy
-- `clients.csv` — 300 synthetic commercial/institutional clients (LEI, NACE 4-digit, group membership)
-- `accounts.csv` — client accounts with structurally valid IBAN/BIC
-- `facilities.csv` — product holdings (loans, credit lines, trade finance, guarantees)
+- `entity_groups.csv` — corporate/institutional group hierarchy (2-tier: ultimate parent / intermediate holding / subsidiary)
+- `clients.csv` — 300 synthetic commercial/institutional clients (LEI, NACE 4-digit, group membership, PEP/sanctions-screening fields)
+- `accounts.csv` — client accounts with structurally valid IBAN/BIC, incl. realistic closures
+- `facilities.csv` — product holdings (loans, credit lines, trade finance, guarantees), causally linked to utilization-spike triggers
 - `risk_ratings.csv` — annual internal credit rating per client
-- `transactions.csv` — ~294k transactions, 2023-01-01 to 2025-12-31, booking/value date + ISO 20022 purpose codes
+- `transactions.csv` — ~303k transactions, 2023-01-01 to 2025-12-31, booking/value date, ISO 20022 purpose codes + message-type tags, bank fees, counterparty jurisdiction risk tagging
 - `balances.csv` — end-of-day balance snapshots, primary accounts
 - `crm_interactions.csv` — RM/campaign engagement log (source of future ML training labels)
 - `trigger_events.csv` — **ground truth** trigger labels, held separate from

@@ -31,7 +31,7 @@ Regenerate with a fixed seed (42) for reproducibility, or change `SEED` /
 
 ---
 
-## entity_groups.csv (~18 rows)
+## entity_groups.csv (~16 rows)
 
 Corporate/institutional group hierarchy. In real commercial/institutional
 banking, NBA and credit decisions are usually made at **group** level, not
@@ -45,6 +45,13 @@ single-legal-entity level — this table is what makes that possible.
 | ultimate_parent_country | string | Country of the ultimate parent |
 | group_type | enum | corporate_group / institutional_consolidation |
 | member_count | int | Number of clients in the group |
+
+Groups with 4+ members form a genuine **two-tier** tree: one subsidiary may
+be designated `intermediate_holding`, with the remaining subsidiaries split
+between reporting to it or directly to the ultimate parent — see
+`parent_client_id` on clients.csv, which is the *immediate* parent within
+the group (distinct from `ultimate_parent_client_id` here, which is always
+the group's top entity).
 
 ## clients.csv (300 rows)
 
@@ -64,10 +71,14 @@ single-legal-entity level — this table is what makes that possible.
 | relationship_manager_id | string | Assigned RM, `RM###` |
 | seasonality_pattern | enum | Cash-flow seasonality shape (summer_peak / harvest_peak / q4_peak / winter_peak / none) |
 | group_id | string, nullable | FK to entity_groups, if the client belongs to one |
-| group_role | enum | standalone / ultimate_parent / subsidiary |
-| group_ownership_pct | float, nullable | For subsidiaries only |
+| group_role | enum | standalone / ultimate_parent / intermediate_holding / subsidiary |
+| group_ownership_pct | float, nullable | For intermediate_holding/subsidiary only |
+| parent_client_id | string, nullable | FK to clients — the *immediate* parent within the group (may be the ultimate parent or an intermediate holding) |
+| pep_flag | bool | Politically-exposed-person indicator on the entity's officers; higher base rate for Institutional/public-sector clients |
+| sanctions_screening_status | enum | clear / cleared_after_review — the latter represents a past false-positive that was investigated and cleared; **no client is ever modeled as currently sanctioned** |
+| last_screening_date | date | Most recent periodic KYC/AML re-screening |
 
-## accounts.csv (~554 rows)
+## accounts.csv (~606 rows)
 
 | column | type | description |
 |---|---|---|
@@ -78,15 +89,24 @@ single-legal-entity level — this table is what makes that possible.
 | currency | string | Account currency |
 | account_type | enum | current / savings / credit_facility |
 | is_primary | bool | True for the client's main operating account |
-| account_status | string | active (v1 — no closures modeled yet) |
+| account_status | enum | active / closed |
+| close_date | date, nullable | Set only when account_status = closed |
 | credit_limit | float | Only set for credit_facility accounts |
 | open_date | date | = client onboarding_date |
 
 Larger clients (Large-Corporate/Institutional) may hold accounts at more
 than one fictitious bank brand — multi-banking is a common real
-corporate-treasury behavior.
+corporate-treasury behavior. Whether a client is guaranteed a
+credit_facility account is now driven by an explicit, segment-scaled
+probability (SME 45%, Mid-Corp 70%, Large-Corp 85%, Institutional 55%,
+loosely calibrated to ECB SAFE) rather than an incidental side effect of a
+random account-type draw — this is what makes `CREDIT_UTILIZATION_SPIKE`
+usable as a trigger across the client base instead of only for the subset
+that happened to get a credit_facility account by chance. ~8% of secondary
+(non-primary) accounts close before the end of the observation window —
+real accounts don't stay open forever.
 
-## facilities.csv (~373 rows) — product holdings
+## facilities.csv (~336 rows) — product holdings
 
 Modeled on public loan-level dataset conventions (Lending Club) adapted to
 corporate/institutional products. **This did not exist in v1** — without it
@@ -109,6 +129,16 @@ systems always check before recommending a cross-sell.
 | status | enum | active / closed / matured / refinanced |
 | collateralized | bool | |
 
+A client's credit_facility accounts are now linked round-robin across ALL
+of that client's overdraft/revolving facilities (not just the first one),
+so a multi-banked or multi-account client's facilities table reflects every
+drawable account it holds. When a client receives a `CREDIT_UTILIZATION_SPIKE`
+trigger, the linked facility's `outstanding_balance` is deliberately bumped
+to 65-95% utilization after transaction generation — the table is now
+causally tied to the embedded trigger, not an independently random snapshot
+that happens to coexist with it. A facility linked to an account that has
+since closed is itself marked `closed`.
+
 ## risk_ratings.csv (~783 rows) — internal credit rating history
 
 Annual review cadence (31 March each year the client is active). Masterscale
@@ -129,7 +159,7 @@ Clients that received a `CASHFLOW_STRESS` trigger event are downgraded in
 their next annual review after the event — the rating table is causally
 linked to transaction behavior, not independently random.
 
-## transactions.csv (~294k rows)
+## transactions.csv (~303k rows)
 
 | column | type | description |
 |---|---|---|
@@ -141,14 +171,23 @@ linked to transaction behavior, not independently random.
 | amount | float | Signed amount (positive = credit/inflow, negative = debit/outflow) |
 | currency | string | Transaction currency (may differ from client home currency) |
 | direction | enum | credit / debit |
-| category | string | supplier_payment, payroll, tax_payment, rent_lease, loan_repayment, utilities, professional_fees, fx_payment, customer_receipt, contract_payment, grant_subsidy, loan_disbursement, interest_income, refund |
-| iso20022_purpose_code | string | Real ISO 20022 External Purpose Code mapped from category (e.g. SALA, SUPP, TAXS, FREX, GOVT) |
+| category | string | supplier_payment, payroll, tax_payment, rent_lease, loan_repayment, utilities, professional_fees, fx_payment, customer_receipt, contract_payment, grant_subsidy, loan_disbursement, interest_income, refund, **bank_fee** |
+| iso20022_purpose_code | string | Real ISO 20022 External Purpose Code mapped from category (e.g. SALA, SUPP, TAXS, FREX, GOVT); bank_fee falls back to the real OTHR code |
+| message_type | string | Real wire-format tag by channel: SEPA→pacs.008, direct debit→pacs.003, SWIFT→MT103 (legacy cross-border format, pre-CBPR+ migration), CARD→ISO8583 (a different standard, not ISO 20022), INTERNAL→internal_gl_posting |
 | counterparty_id | string | Synthetic counterparty reference, stable per client |
+| counterparty_country | string | ISO country code, mostly domestic/EU/major trade partners; ~5% tagged `XZ` — a synthetic elevated-monitoring jurisdiction placeholder, never a real country |
+| high_risk_counterparty_flag | bool | True only when counterparty_country = XZ |
 | channel | string | SEPA_CREDIT_TRANSFER / SWIFT / CARD / DIRECT_DEBIT / INTERNAL |
 | remittance_info | string | Short free-text payment reference |
 | balance_after | float | Running balance on that transaction's account after posting |
 
-## balances.csv (~297k rows) — end-of-day snapshots, primary accounts only
+`bank_fee` rows are now generated on two real triggers: a monthly account
+maintenance charge (first business day of each month, segment-scaled
+amount) and an FX conversion fee on ~40% of non-home-currency transactions
+(0.4-1.5% of the transaction amount) — the previous version had transaction
+categories but no fee/charge line items at all.
+
+## balances.csv (~294k rows) — end-of-day snapshots, primary accounts only
 
 Real banking data warehouses expose EOD balance as its own fact table
 rather than expecting consumers to reconstruct it from a raw transaction
@@ -162,7 +201,7 @@ the only balance signal.
 | opening_balance | float | |
 | closing_balance | float | |
 
-## crm_interactions.csv (~315 rows) — RM/campaign engagement log
+## crm_interactions.csv (~278 rows) — RM/campaign engagement log
 
 The source of "did this trigger convert" labels an ML scoring model needs.
 **Did not exist in v1** — without it there was no honest way to generate
@@ -182,13 +221,13 @@ rather than trigger-only).
 | linked_trigger_type | string, nullable | Blank for baseline noise interactions |
 | outcome | enum | accepted / declined / no_response / pending |
 
-## trigger_events.csv (~220 rows) — GROUND TRUTH, held out from transactions.csv
+## trigger_events.csv (~188 rows) — GROUND TRUTH, held out from transactions.csv
 
 The answer key. Each row is a trigger event deliberately embedded into a
 client's transaction history. **Do not feed this file into a rule-engine or
 model as a feature** — use it only to score precision/recall of whatever
 detector you build against transactions.csv (and now facilities/balances).
-About 55% of clients have 1-2 embedded trigger events; the rest have none
+About half of clients have 1-2 embedded trigger events; the rest have none
 (pure noise/baseline behavior), which matters for measuring false-positive
 rate.
 
@@ -212,16 +251,46 @@ rate.
 | DORMANT_REACTIVATION | 60-150 day near-silent window followed by activity resuming | Re-engagement outreach, relationship review |
 | RECURRING_REVENUE_ESTABLISHED | A new regular recurring inflow pattern begins mid-history | Cash management / collections product |
 
-## Known limitations (v2)
+## v2 -> v3 changes (gaps closed)
 
-- `CREDIT_UTILIZATION_SPIKE` is still somewhat underrepresented — only
-  clients holding a credit_facility account are eligible.
-- No transaction-level fee/charge line items, no full ISO 20022 message
-  envelope (only the purpose code is modeled).
-- `account_status` is always "active" — no closures/reactivations modeled
-  at the account level (only at the trigger/dormancy level).
-- Group hierarchy is single-level (parent + subsidiaries) — no multi-tier
-  holding structures.
-- No sanctions/AML watchlist or graph-based counterparty-network data
-  (Elliptic/IBM-AML-style academic datasets would be the reference for
-  that, if that becomes the next need).
+The five gaps flagged in the prior version have been addressed:
+
+- **CREDIT_UTILIZATION_SPIKE eligibility** — credit_facility accounts are
+  now guaranteed per client via an explicit, segment-scaled probability
+  (45-85%) instead of falling out of a random account-type draw; coverage
+  went from ~120 to 166/300 clients, and every facility linked to a
+  credit_facility account round-robins across all of that client's
+  accounts, not just the first. A client's `CREDIT_UTILIZATION_SPIKE`
+  trigger now also causally bumps its linked facility to 65-95%
+  utilization in facilities.csv, instead of that table staying an
+  independently random snapshot.
+- **Fees + message envelope** — `bank_fee` transactions now exist (monthly
+  maintenance charges + FX conversion fees), and every transaction carries
+  a real wire-format `message_type` tag (pacs.008 / pacs.003 / MT103 /
+  ISO8583 / internal_gl_posting) alongside the existing purpose code.
+- **Account closures** — `account_status` can now be `closed`, with a
+  `close_date`; ~8% of secondary accounts close within the observation
+  window, and any facility linked to a closed account is itself closed.
+- **Multi-tier group hierarchy** — groups with 4+ members can now have an
+  `intermediate_holding` tier, with `parent_client_id` on clients.csv
+  giving the *immediate* parent (which may itself be an intermediate
+  holding), separate from the group's ultimate parent.
+- **AML/sanctions-lite layer** — clients.csv carries `pep_flag`,
+  `sanctions_screening_status`, and `last_screening_date`; transactions.csv
+  carries `counterparty_country` and `high_risk_counterparty_flag`, using a
+  synthetic elevated-monitoring jurisdiction code rather than naming any
+  real country as high-risk.
+
+## Known limitations (v3)
+
+- No full graph-based counterparty-network data (Elliptic/IBM-AML-style
+  academic datasets would be the reference if AML graph analytics becomes
+  the next need) — `counterparty_country`/`high_risk_counterparty_flag`
+  are a flat tag, not a network.
+- `close_date` on accounts doesn't retroactively stop related facility
+  draws mid-history — a closed credit_facility account simply has no draws
+  generated against it for the whole run, rather than draws stopping
+  exactly at close_date.
+- No private/wealth-banking structures (securities/custody holdings, AUM,
+  advisory/discretionary mandate, MiFID II suitability) — out of scope by
+  design; this dataset stays commercial/institutional only (see README).
