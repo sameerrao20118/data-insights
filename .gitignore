@@ -4,3 +4,5 @@ __pycache__/
 .DS_Store
 data_generator/output/*.csv
 data_generator/output/protected_evaluator_only/*.csv
+data_generator/output_holdout/*.csv
+data_generator/output_holdout/protected_evaluator_only/*.csv

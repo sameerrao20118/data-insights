@@ -1,0 +1,50 @@
+config_version: 1
+profile: snowflake_trial_ollama
+# INACTIVE until explicitly selected (DATAINSIGHTS_PROFILE=snowflake_trial_ollama)
+# AND the env vars below are set. No credentials live in this file --
+# connection_ref names an env-var prefix the config loader reads from
+# os.environ at runtime: SNOWFLAKE_POC_ACCOUNT, SNOWFLAKE_POC_USER,
+# SNOWFLAKE_POC_PASSWORD, SNOWFLAKE_POC_WAREHOUSE, SNOWFLAKE_POC_DATABASE,
+# SNOWFLAKE_POC_SCHEMA, SNOWFLAKE_POC_ROLE. Set these in your own shell
+# profile / .env (gitignored), never in this file, a prompt, or a log.
+runtime:
+  target: local
+source:
+  backend: snowflake
+  connection_ref: poc
+  entity_map_ref: config/entities.yaml
+  access: read_only
+  cost_policy: verified_trial_only
+  warehouse_size: XSMALL
+  auto_suspend_seconds: 60
+  query_timeout_seconds: 30
+  statement_row_limit: 200000
+analytics:
+  backend: duckdb_local  # compute stays local even when source is Snowflake;
+                          # Snowflake is a source of record, not a mandated
+                          # compute/AI platform (see project instructions).
+llm:
+  provider: ollama
+  base_url: http://127.0.0.1:11434
+  model: qwen2.5:7b
+  allow_remote_inference: false
+  allow_paid_fallback: false
+  fallback: deterministic_template
+judge:
+  provider: ollama
+  model: qwen2.5:7b
+  mode: offline_sampled
+state:
+  backend: sqlite
+  path: ./var/state.sqlite
+output:
+  backend: local
+  path: ./var/insights
+monitor:
+  enabled: false
+  interval_minutes: 60
+  max_concurrent_runs: 1
+  lookback_ref: config/rules.yaml
+cost:
+  paid_llm_calls_allowed: false
+  paid_cloud_services_allowed: false

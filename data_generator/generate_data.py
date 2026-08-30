@@ -59,6 +59,7 @@ import numpy as np
 import pandas as pd
 from faker import Faker
 from datetime import date, timedelta
+import argparse
 import uuid
 import os
 
@@ -987,6 +988,27 @@ def gen_crm_interactions(triggers: pd.DataFrame, clients: pd.DataFrame):
 # Main
 # ----------------------------------------------------------------------
 def main():
+    global SEED, OUT_DIR, PROTECTED_DIR, rng, fake
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--seed", type=int, default=SEED,
+                         help="RNG seed. Use a different seed to generate an independent "
+                              "dataset -- e.g. an evaluator-only holdout that the same "
+                              "generation logic produced but with different realized values.")
+    parser.add_argument("--out-dir", type=str, default=None,
+                         help="Output directory (default: data_generator/output/). "
+                              "trigger_events.csv is always written to "
+                              "<out-dir>/protected_evaluator_only/ within it.")
+    args = parser.parse_args()
+
+    if args.seed != SEED:
+        SEED = args.seed
+        rng = np.random.default_rng(SEED)
+        Faker.seed(SEED)
+    if args.out_dir:
+        OUT_DIR = args.out_dir
+        PROTECTED_DIR = os.path.join(OUT_DIR, "protected_evaluator_only")
+
     os.makedirs(OUT_DIR, exist_ok=True)
     os.makedirs(PROTECTED_DIR, exist_ok=True)
 

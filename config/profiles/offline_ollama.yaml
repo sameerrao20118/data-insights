@@ -1,0 +1,40 @@
+config_version: 1
+profile: offline_ollama
+runtime:
+  target: local
+source:
+  backend: offline_local
+  # Points at a directory produced by data_generator/generate_data.py.
+  # Must contain the tables in config/entities.yaml; must NOT be read from
+  # protected_evaluator_only/ -- the offline_local adapter refuses that path.
+  data_dir: data_generator/output
+  entity_map_ref: config/entities.yaml
+  access: read_only
+  cost_policy: no_cost_local_files
+analytics:
+  backend: duckdb_local
+llm:
+  provider: ollama
+  base_url: http://127.0.0.1:11434
+  model: qwen2.5:7b
+  allow_remote_inference: false
+  allow_paid_fallback: false
+  fallback: deterministic_template
+judge:
+  provider: ollama
+  model: qwen2.5:7b
+  mode: offline_sampled
+state:
+  backend: sqlite
+  path: ./var/state.sqlite
+output:
+  backend: local
+  path: ./var/insights
+monitor:
+  enabled: false
+  interval_minutes: 60
+  max_concurrent_runs: 1
+  lookback_ref: config/rules.yaml
+cost:
+  paid_llm_calls_allowed: false
+  paid_cloud_services_allowed: false

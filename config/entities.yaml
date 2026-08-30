@@ -1,0 +1,103 @@
+# Logical source contract: entity grain, join keys, time/currency semantics,
+# and missing-data policy for each table a DataSource adapter may expose.
+#
+# This maps PHYSICAL tables (a CSV filename today; a Snowflake table name
+# once loaded there) to LOGICAL entities the detection/analytics layer
+# depends on. Changing a physical table name does not by itself make new
+# data fit this contract -- required_columns must actually be present with
+# compatible types, or the adapter must reject it with an actionable error.
+#
+# Deliberately excludes trigger_events -- that table is evaluator-only
+# ground truth, never a DataSource input. See
+# data_generator/output/protected_evaluator_only/README.md.
+#
+# In scope for the first detector (transactions, accounts, balances) are
+# fully specified. clients/facilities/risk_ratings/entity_groups/
+# crm_interactions exist in the dataset but are not yet contracted here --
+# add them when a detector actually needs them, per the "small vertical
+# slice" instruction, rather than contracting the whole dataset up front.
+
+contract_version: 1
+
+entities:
+  transactions:
+    physical_table: transactions
+    grain: one row per posted payment/fee event on one account
+    primary_key: [transaction_id]
+    required_columns:
+      transaction_id: {type: string, nullable: false}
+      account_id: {type: string, nullable: false}
+      client_id: {type: string, nullable: false}
+      booking_date: {type: date, nullable: false}
+      value_date: {type: date, nullable: false}
+      amount: {type: decimal, nullable: false}
+      currency: {type: string, nullable: false, format: "ISO 4217, 3 letters"}
+      direction: {type: string, nullable: false, allowed: [credit, debit]}
+      category: {type: string, nullable: false}
+      channel: {type: string, nullable: false}
+    optional_columns:
+      counterparty_id: {type: string, fallback_if_missing: "treat as unknown counterparty, no concentration features"}
+      counterparty_country: {type: string, fallback_if_missing: "treat as unknown jurisdiction"}
+      high_risk_counterparty_flag: {type: bool, fallback_if_missing: "false"}
+      iso20022_purpose_code: {type: string, fallback_if_missing: "unused"}
+      message_type: {type: string, fallback_if_missing: "unused"}
+      remittance_info: {type: string, fallback_if_missing: "unused"}
+    time_semantics:
+      event_time_field: booking_date
+      settlement_time_field: value_date
+      # No separate ingestion/availability timestamp exists in this synthetic
+      # dataset. Treat booking_date as both event time AND the earliest time
+      # the transaction could plausibly have been detected -- this is a
+      # known simplification (event-time replay, not true availability-aware
+      # backtesting). Document this explicitly wherever "as of" language is
+      # used; do not claim ingestion-timestamp-aware backtesting.
+      ingestion_time_field: null
+    currency_semantics:
+      amount_sign_convention: "positive = credit/inflow, negative = debit/outflow"
+      cross_currency_aggregation: forbidden
+      note: "Never sum amount across differing currency values without an
+        approved, point-in-time FX rate source. None is configured yet --
+        keep all aggregation currency-scoped (per account.currency or per
+        transaction.currency) until one is."
+    missing_data_policy: "A transaction missing any required_columns value is
+      excluded from detector input and counted in a rejected-row metric, not
+      silently dropped."
+
+  accounts:
+    physical_table: accounts
+    grain: one row per bank account
+    primary_key: [account_id]
+    required_columns:
+      account_id: {type: string, nullable: false}
+      client_id: {type: string, nullable: false}
+      currency: {type: string, nullable: false}
+      account_type: {type: string, nullable: false, allowed: [current, savings, credit_facility]}
+      is_primary: {type: bool, nullable: false}
+      account_status: {type: string, nullable: false, allowed: [active, closed]}
+      open_date: {type: date, nullable: false}
+    optional_columns:
+      close_date: {type: date, fallback_if_missing: "null = still open"}
+      credit_limit: {type: decimal, fallback_if_missing: "0"}
+    missing_data_policy: "An account referenced by a transaction but absent
+      from this table blocks that transaction from detector input (broken
+      join), not a silent default."
+
+  balances:
+    physical_table: balances
+    grain: one row per account per calendar day (primary accounts only)
+    primary_key: [account_id, date]
+    required_columns:
+      account_id: {type: string, nullable: false}
+      date: {type: date, nullable: false}
+      opening_balance: {type: decimal, nullable: false}
+      closing_balance: {type: decimal, nullable: false}
+    time_semantics:
+      event_time_field: date
+      ingestion_time_field: null
+    missing_data_policy: "A gap in the daily calendar for an account means
+      no balance-based feature is computed for that account on that date --
+      report as insufficient_evidence, never interpolated silently."
+
+transformations: []  # none defined yet; add here (not inline in detector
+                      # code) when a detector needs a derived column, so the
+                      # transformation is part of the versioned contract.

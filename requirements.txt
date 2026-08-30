@@ -1,3 +1,7 @@
 pandas
 numpy
 faker
+pydantic>=2
+pyyaml
+duckdb
+snowflake-connector-python
