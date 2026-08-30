@@ -70,6 +70,12 @@ N_CLIENTS = 300
 START_DATE = date(2023, 1, 1)
 END_DATE = date(2025, 12, 31)
 OUT_DIR = os.path.join(os.path.dirname(__file__), "output")
+# trigger_events.csv is ground truth for evaluating a detector, not an input
+# to it. It lives in a separate path so detector code and coding-assistant
+# sessions don't casually read it alongside the real source tables. This is
+# a convenience boundary, not an access-control guarantee -- see the note
+# left in this directory.
+PROTECTED_DIR = os.path.join(OUT_DIR, "protected_evaluator_only")
 
 rng = np.random.default_rng(SEED)
 fake = Faker(["en_GB", "de_DE", "fr_FR", "nl_NL", "es_ES", "it_IT"])
@@ -982,6 +988,7 @@ def gen_crm_interactions(triggers: pd.DataFrame, clients: pd.DataFrame):
 # ----------------------------------------------------------------------
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
+    os.makedirs(PROTECTED_DIR, exist_ok=True)
 
     print("Generating clients + entity groups...")
     clients, groups = gen_clients()
@@ -1018,7 +1025,7 @@ def main():
     balances.to_csv(os.path.join(OUT_DIR, "balances.csv"), index=False)
     crm_interactions.to_csv(os.path.join(OUT_DIR, "crm_interactions.csv"), index=False)
     triggers.sort_values(["client_id", "event_date"]).to_csv(
-        os.path.join(OUT_DIR, "trigger_events.csv"), index=False
+        os.path.join(PROTECTED_DIR, "trigger_events.csv"), index=False
     )
 
     print(f"Entity groups:      {len(groups):>8,}")
