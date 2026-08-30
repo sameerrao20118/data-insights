@@ -13,19 +13,21 @@ for why, and how the synthetic data is grounded in public statistics instead.
 
 ## Status
 
-- [x] **Synthetic data generator** — `data_generator/generate_data.py`
-      produces a 3-year, 300-client commercial/institutional dataset:
-      entity groups, clients, accounts, product holdings (facilities),
-      internal risk ratings, transactions, EOD balances, and CRM/campaign
-      interactions — with embedded, labeled trigger events held out for
-      evaluation. Schema is modeled on real academic/industry references
-      (Berka/PKDD'99 financial dataset, Lending Club, UCI German Credit,
-      ISO 20022, IBAN/LEI checksums, Eurostat NACE) — see the data
-      dictionary for the full mapping.
-- [ ] Rule-based trigger detection engine
-- [ ] ML opportunity scoring/ranking model
-- [ ] Excel/email digest output
-- [ ] LLM narrative layer + agentic orchestration
+See [`docs/current_state.md`](docs/current_state.md) for the full, current
+picture — what's verified working, what's NOT RUN, and known limitations.
+Short version:
+
+- [x] Synthetic data generator (dev + independently-seeded holdout dataset)
+- [x] Typed config profiles (`offline_ollama` active; `snowflake_trial_ollama`
+      wired but NOT RUN — no credentials configured)
+- [x] Offline `DataSource` adapter (DuckDB), tested against leakage
+- [x] Detector: large-incoming-payment vs. trailing baseline (9/9 tests pass)
+- [x] Explicit ranking formula, deterministic + local-Ollama narrative,
+      offline-sampled judge, SQLite state, local RM digest — all run
+      end-to-end, no paid calls, no Snowflake/AWS calls
+- [x] Evaluation harness (dev-diagnostic only — see contamination
+      disclosure in `data_generator/output/protected_evaluator_only/README.md`)
+- [ ] Replay/monitor mode with checkpoints; ML ranking challenger; AWS path
 
 ## Setup
 
@@ -33,6 +35,17 @@ for why, and how the synthetic data is grounded in public statistics instead.
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+## Run the full pipeline (local Ollama, no credentials needed)
+
+```bash
+source .venv/bin/activate
+python -m datainsights.cli                  # detect -> rank -> narrate -> digest
+python -m datainsights.status                # what happened last
+python -m datainsights.judge.run_sample 10   # offline semantic judge on a sample
+python -m evaluation.evaluate                # dev-diagnostic precision/recall
+python -m pytest tests/ -v                   # detector test suite
 ```
 
 ## Generate the dataset
@@ -60,6 +73,7 @@ Writes to `data_generator/output/`:
 
 ## Next step
 
-Build the rule-based trigger detection engine against `transactions.csv`
-(and now `facilities.csv` / `balances.csv`), then score it against
-`trigger_events.csv`.
+Replay/monitor mode with real checkpoints (project instructions §10.1),
+then a coding-process benchmark (§9). Wire Snowflake yourself when ready
+(`config/profiles/snowflake_trial_ollama.yaml` documents the env vars) —
+the detector code won't need to change.

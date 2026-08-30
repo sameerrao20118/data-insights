@@ -1,0 +1,42 @@
+# Detector parameters. Kept out of code so they're a versioned, reviewable
+# config, not a magic number buried in detection_engine/. All thresholds
+# here are PROVISIONAL (see docs/detector_spec_large_incoming_payment.md) --
+# not validated against any outcome, only structurally sane.
+
+rule_version: "large_incoming_payment.v1"
+
+large_incoming_payment:
+  baseline_window_days: 90
+  min_baseline_transactions: 15
+  mad_multiplier: 6.0
+  absolute_floor_by_currency:
+    EUR: 5000
+    PLN: 20000
+    USD: 5000
+    GBP: 5000
+    CHF: 5000
+    JPY: 600000
+  cooldown_days: 30
+
+ranking:
+  # score = magnitude_weight * magnitude_component + recency_weight * recency_component
+  # both components normalized to [0, 1]; weights sum to 1 by convention,
+  # not enforced -- documented here so the formula stays auditable.
+  magnitude_weight: 0.7
+  recency_weight: 0.3
+  recency_half_life_days: 14
+  # magnitude_component = min(1.0, mad_multiples / magnitude_saturation_at)
+  magnitude_saturation_at: 20.0
+
+narrative:
+  narrator_model: qwen2.5:7b
+  judge_model: llama3.1:8b   # deliberately a different model than the
+                              # narrator, to reduce correlated judge/narrator
+                              # errors (project instructions section 8)
+  max_context_chars: 4000
+  timeout_seconds: 45
+  max_repair_attempts: 2
+
+evaluation:
+  match_window_days: 21   # allowable time window between a detection and a
+                            # ground-truth event_date to count as a match
