@@ -14,6 +14,7 @@ for why, and how the synthetic data is grounded in public statistics instead.
 ## Docs
 
 - [User Guide](docs/user_guide.md) — setup, running the pipeline, reading output, troubleshooting
+- [Snowflake Setup](docs/snowflake_setup.md) — step-by-step: warehouse, DDL, data load, credentials
 - [Architecture](docs/architecture.md) — system design, data flow diagram, component map, design decisions
 - [Current State](docs/current_state.md) — what's verified working vs. NOT RUN vs. not built
 

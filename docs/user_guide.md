@@ -4,6 +4,20 @@ Practical how-to. For what's actually verified working vs. NOT RUN, see
 [`current_state.md`](current_state.md). For system design, see
 [`architecture.md`](architecture.md).
 
+## Where you are right now
+
+- **Steps 1-6 below (local, offline, Ollama-only): alive and verified.**
+  You can run the whole detect → rank → narrate → digest pipeline today,
+  right now, with zero setup beyond what's in Step 1.
+- **Step 7 (Snowflake): not yet connected.** This needs your own account
+  actions (create a warehouse, load data, set credentials) that only you
+  can do — see [`snowflake_setup.md`](snowflake_setup.md) for the full
+  walkthrough. Nothing else in the pipeline is blocked on this; it's an
+  optional second data source, not a dependency.
+
+If you just want to see the thing work end to end, do Steps 1-5 and stop
+there.
+
 ## 1. Prerequisites
 
 - Python 3 with a virtualenv at `.venv/` (already set up in this repo)
@@ -104,23 +118,17 @@ judge models). That's intentional, not boilerplate to skip past.
 
 ## 7. Wiring Snowflake (optional, when you're ready)
 
-1. In the Snowflake UI: create a warehouse (XSMALL, auto-suspend ~60s), a
-   database, and a schema for this POC.
-2. Load the CSVs from `data_generator/output/` (NOT the
-   `protected_evaluator_only/` subfolder) into tables matching
-   `config/entities.yaml`'s column names/types.
-3. In your own shell profile (never in a repo file), set:
-   ```bash
-   export SNOWFLAKE_POC_ACCOUNT=...
-   export SNOWFLAKE_POC_USER=...
-   export SNOWFLAKE_POC_PASSWORD=...
-   export SNOWFLAKE_POC_WAREHOUSE=...
-   export SNOWFLAKE_POC_DATABASE=...
-   export SNOWFLAKE_POC_SCHEMA=...
-   ```
-4. `python -m datainsights.cli --profile snowflake_trial_ollama`
+This is a 9-step, click-by-click walkthrough — creating the warehouse/
+database/schema, running the provided DDL, loading the three CSVs,
+setting your 6 credential env vars, and testing the connection — written
+against your actual trial account. It's long enough that it lives in its
+own file: **[`snowflake_setup.md`](snowflake_setup.md)**.
 
-Without these env vars set, this profile fails closed with a clear error
+Short version once that's done:
+```bash
+python -m datainsights.cli --profile snowflake_trial_ollama
+```
+Without the env vars set, this profile fails closed with a clear error
 naming exactly which variable is missing — it will never silently fall
 back to offline data.
 
