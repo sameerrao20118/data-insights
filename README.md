@@ -11,6 +11,12 @@ No real client data is used anywhere in this repo. See
 [`data_generator/output/data_dictionary.md`](data_generator/output/data_dictionary.md)
 for why, and how the synthetic data is grounded in public statistics instead.
 
+## Docs
+
+- [User Guide](docs/user_guide.md) — setup, running the pipeline, reading output, troubleshooting
+- [Architecture](docs/architecture.md) — system design, data flow diagram, component map, design decisions
+- [Current State](docs/current_state.md) — what's verified working vs. NOT RUN vs. not built
+
 ## Status
 
 See [`docs/current_state.md`](docs/current_state.md) for the full, current
