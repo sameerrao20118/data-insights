@@ -1,0 +1,244 @@
+<title>Production Blueprint</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --bg:#EDF0EC; --surface:#F7F9F6; --ink:#1B2320; --ink-soft:#4B534E; --rule:#D8DCD5;
+    --active:#1F6E5C; --active-fill:#E4F1EC;
+    --pending:#83897F; --pending-fill:#F1F2EF;
+    --band-fill:#FBFCFA;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#131714; --surface:#1A201C; --ink:#E9ECE6; --ink-soft:#A9B0A5; --rule:#2C322D;
+      --active:#4FBE9C; --active-fill:#17332B;
+      --pending:#8B928A; --pending-fill:#20251F;
+      --band-fill:#171C19;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#131714; --surface:#1A201C; --ink:#E9ECE6; --ink-soft:#A9B0A5; --rule:#2C322D;
+    --active:#4FBE9C; --active-fill:#17332B;
+    --pending:#8B928A; --pending-fill:#20251F;
+    --band-fill:#171C19;
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--ink); font-family:'IBM Plex Sans', system-ui, sans-serif; -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1220px; margin:0 auto; padding:56px 28px 80px;}
+
+  .eyebrow{font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:var(--active); font-weight:600; margin:0 0 10px;}
+  h1{font-size:clamp(28px,4vw,38px); font-weight:600; letter-spacing:-.01em; margin:0 0 12px; text-wrap:balance;}
+  .lede{font-size:16px; line-height:1.6; color:var(--ink-soft); max-width:680px; margin:0 0 30px;}
+
+  .legend{display:flex; flex-wrap:wrap; gap:22px; align-items:center; padding:14px 18px; border:1px solid var(--rule); border-radius:8px; background:var(--surface); margin-bottom:34px;}
+  .legend-item{display:flex; align-items:center; gap:9px; font-size:12.5px; color:var(--ink-soft);}
+  .legend-item svg{display:block; flex:none;}
+
+  figure{margin:0 0 40px;}
+  .diagram-frame{border:1px solid var(--rule); border-radius:10px; background:var(--surface); padding:18px; overflow-x:auto;}
+  .diagram-frame svg{display:block; max-width:100%; height:auto; min-width:1100px;}
+  figcaption{font-size:12.5px; color:var(--ink-soft); margin-top:12px; line-height:1.5;}
+
+  .node rect{stroke-width:1.6;}
+  .node.active rect{fill:var(--active-fill); stroke:var(--active);}
+  .node.pending rect{fill:var(--pending-fill); stroke:var(--pending); stroke-dasharray:5 4;}
+  .node-title{font-family:'IBM Plex Mono', monospace; font-size:12px; font-weight:600; text-anchor:middle;}
+  .node.active .node-title{fill:var(--active);}
+  .node.pending .node-title{fill:var(--pending);}
+  .node-sub{font-family:'IBM Plex Sans', sans-serif; font-size:10px; fill:var(--ink-soft); text-anchor:middle;}
+
+  .band-bg{fill:var(--band-fill); stroke:var(--rule); stroke-width:1;}
+  .band-label{font-family:'IBM Plex Mono', monospace; font-size:11.5px; letter-spacing:.09em; text-transform:uppercase; fill:var(--ink); font-weight:600;}
+  .flow{stroke:var(--ink-soft); stroke-width:1.6; fill:none;}
+  .mk-flow{fill:var(--ink-soft);}
+
+  .strip-title{font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.07em; text-transform:uppercase; fill:var(--ink); font-weight:600;}
+  .strip-item{font-family:'IBM Plex Sans', sans-serif; font-size:10.5px; fill:var(--ink-soft);}
+  .strip-box{fill:var(--pending-fill); stroke:var(--pending); stroke-width:1.4; stroke-dasharray:5 4;}
+
+  table{width:100%; border-collapse:collapse; font-size:13.5px; margin-top:8px;}
+  caption{text-align:left; font-size:12.5px; color:var(--ink-soft); margin-bottom:10px;}
+  th{text-align:left; font-family:'IBM Plex Mono', monospace; font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-soft); padding:0 14px 10px 0; border-bottom:1px solid var(--rule); font-weight:500;}
+  td{padding:11px 14px 11px 0; border-bottom:1px solid var(--rule); vertical-align:top;}
+  .badge{display:inline-block; font-family:'IBM Plex Mono', monospace; font-size:10.5px; padding:2px 8px; border-radius:20px; white-space:nowrap;}
+  .badge.active{color:var(--active); background:var(--active-fill); border:1px solid var(--active);}
+  .badge.pending{color:var(--pending); background:var(--pending-fill); border:1px solid var(--pending);}
+  footer{margin-top:36px; font-size:12px; color:var(--ink-soft); line-height:1.6;}
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">DataInsights — from POC to production</p>
+  <h1>The production-ready architecture</h1>
+  <p class="lede">
+    Same five stages as the pipeline you already have — sources, orchestration,
+    detection/ranking, narrative/judge, human review — but each one drawn at
+    the scale a real deployment needs, with what's already built (solid) shown
+    against everything still to build (dashed). Two cross-cutting concerns
+    (governance, observability, delivery) underlie every stage above them.
+  </p>
+
+  <div class="legend">
+    <span class="legend-item"><svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="var(--active)" stroke-width="2"/></svg> Built, at POC scale</span>
+    <span class="legend-item"><svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="var(--pending)" stroke-width="2" stroke-dasharray="5 4"/></svg> Not built — needed for production</span>
+  </div>
+
+  <figure>
+    <div class="diagram-frame">
+      <svg viewBox="0 0 1650 900" role="img" aria-label="Five-stage production architecture: sources, orchestration and state, detection and ranking, narrative and judge, human layer -- each stage shows what is already built at proof-of-concept scale versus what production requires. Two cross-cutting foundations, governance and observability and delivery, underlie all five stages.">
+
+        <defs>
+          <marker id="arrow-flow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <polygon class="mk-flow" points="0,0 8,4 0,8"/>
+          </marker>
+        </defs>
+
+        <!-- Band 1: Sources -->
+        <rect class="band-bg" x="10" y="30" width="1630" height="105" rx="8"/>
+        <text x="30" y="52" class="band-label">1 · Sources</text>
+
+        <g class="node pending"><rect x="30" y="62" width="370" height="60" rx="7"/>
+          <text x="215" y="86" class="node-title">Snowflake</text>
+          <text x="215" y="102" class="node-sub">adapter exists — never connected to a real account</text></g>
+        <g class="node pending"><rect x="430" y="62" width="370" height="60" rx="7"/>
+          <text x="615" y="86" class="node-title">Athena / Glue / S3</text>
+          <text x="615" y="102" class="node-sub">AWS path — contract only, no adapter</text></g>
+        <g class="node pending"><rect x="830" y="62" width="370" height="60" rx="7"/>
+          <text x="1015" y="86" class="node-title">Structured APIs</text>
+          <text x="1015" y="102" class="node-sub">ECB · TED · Eurostat · EU sanctions · EUR-Lex</text></g>
+        <g class="node pending"><rect x="1230" y="62" width="370" height="60" rx="7"/>
+          <text x="1415" y="86" class="node-title">News / GDELT extraction</text>
+          <text x="1415" y="102" class="node-sub">hardest — needs a new extraction service, not just an adapter</text></g>
+
+        <line x1="825" y1="135" x2="825" y2="170" class="flow" marker-end="url(#arrow-flow)"/>
+
+        <!-- Band 2: Orchestration & State -->
+        <rect class="band-bg" x="10" y="155" width="1630" height="105" rx="8"/>
+        <text x="30" y="177" class="band-label">2 · Orchestration &amp; state</text>
+
+        <g class="node pending"><rect x="30" y="187" width="370" height="60" rx="7"/>
+          <text x="215" y="211" class="node-title">Scheduler</text>
+          <text x="215" y="227" class="node-sub">Snowflake Tasks / EventBridge / Airflow</text></g>
+        <g class="node pending"><rect x="430" y="187" width="370" height="60" rx="7"/>
+          <text x="615" y="211" class="node-title">Checkpoint / watermark store</text>
+          <text x="615" y="227" class="node-sub">most load-bearing gap — everything below assumes this exists</text></g>
+        <g class="node active"><rect x="830" y="187" width="370" height="60" rx="7"/>
+          <text x="1015" y="211" class="node-title">SQLite (today)</text>
+          <text x="1015" y="227" class="node-sub">single-machine, single-writer — fine for a POC</text></g>
+        <g class="node pending"><rect x="1230" y="187" width="370" height="60" rx="7"/>
+          <text x="1415" y="211" class="node-title">Transactional store</text>
+          <text x="1415" y="227" class="node-sub">Postgres / DynamoDB — concurrent writers, crash-safe</text></g>
+
+        <line x1="825" y1="260" x2="825" y2="295" class="flow" marker-end="url(#arrow-flow)"/>
+
+        <!-- Band 3: Detection & Ranking -->
+        <rect class="band-bg" x="10" y="280" width="1630" height="105" rx="8"/>
+        <text x="30" y="302" class="band-label">3 · Detection &amp; ranking</text>
+
+        <g class="node active"><rect x="30" y="312" width="370" height="60" rx="7"/>
+          <text x="215" y="336" class="node-title">Detector fleet</text>
+          <text x="215" y="352" class="node-sub">1/8 endogenous + 1 exogenous demo, tested</text></g>
+        <g class="node pending"><rect x="430" y="312" width="370" height="60" rx="7"/>
+          <text x="615" y="336" class="node-title">Remaining 7 detectors</text>
+          <text x="615" y="352" class="node-sub">+ scaled compute (Snowpark/Spark) if volume demands it</text></g>
+        <g class="node active"><rect x="830" y="312" width="370" height="60" rx="7"/>
+          <text x="1015" y="336" class="node-title">Ranking — explicit rules</text>
+          <text x="1015" y="352" class="node-sub">magnitude + recency, auditable, no ML</text></g>
+        <g class="node pending"><rect x="1230" y="312" width="370" height="60" rx="7"/>
+          <text x="1415" y="336" class="node-title">ML ranking challenger</text>
+          <text x="1415" y="352" class="node-sub">only once real conversion labels exist — not before</text></g>
+
+        <line x1="825" y1="385" x2="825" y2="420" class="flow" marker-end="url(#arrow-flow)"/>
+
+        <!-- Band 4: Narrative & Judge -->
+        <rect class="band-bg" x="10" y="405" width="1630" height="105" rx="8"/>
+        <text x="30" y="427" class="band-label">4 · Narrative &amp; judge</text>
+
+        <g class="node active"><rect x="30" y="437" width="370" height="60" rx="7"/>
+          <text x="215" y="461" class="node-title">Local Ollama narrator</text>
+          <text x="215" y="477" class="node-sub">validated, template fallback, no paid calls</text></g>
+        <g class="node pending"><rect x="430" y="437" width="370" height="60" rx="7"/>
+          <text x="615" y="461" class="node-title">Managed LLM service</text>
+          <text x="615" y="477" class="node-sub">real SLA/throughput + versioned prompt registry</text></g>
+        <g class="node active"><rect x="830" y="437" width="370" height="60" rx="7"/>
+          <text x="1015" y="461" class="node-title">Sampled offline judge</text>
+          <text x="1015" y="477" class="node-sub">different model than narrator, small sample only</text></g>
+        <g class="node pending"><rect x="1230" y="437" width="370" height="60" rx="7"/>
+          <text x="1415" y="461" class="node-title">Human-calibrated judge loop</text>
+          <text x="1415" y="477" class="node-sub">real reviewer ground truth, not just self-check</text></g>
+
+        <line x1="825" y1="510" x2="825" y2="545" class="flow" marker-end="url(#arrow-flow)"/>
+
+        <!-- Band 5: Human Layer -->
+        <rect class="band-bg" x="10" y="530" width="1630" height="105" rx="8"/>
+        <text x="30" y="552" class="band-label">5 · Human layer</text>
+
+        <g class="node active"><rect x="30" y="562" width="370" height="60" rx="7"/>
+          <text x="215" y="586" class="node-title">Flat CSV worklist + digest</text>
+          <text x="215" y="602" class="node-sub">row-per-client, category-tagged, no persistence of RM action</text></g>
+        <g class="node pending"><rect x="430" y="562" width="370" height="60" rx="7"/>
+          <text x="615" y="586" class="node-title">Stateful RM dashboard</text>
+          <text x="615" y="602" class="node-sub">open → reviewed → actioned → dismissed</text></g>
+        <g class="node pending"><rect x="830" y="562" width="370" height="60" rx="7"/>
+          <text x="1015" y="586" class="node-title">CRM / email integration</text>
+          <text x="1015" y="602" class="node-sub">explicitly gated — needs separate authorization</text></g>
+        <g class="node pending"><rect x="1230" y="562" width="370" height="60" rx="7"/>
+          <text x="1415" y="586" class="node-title">Feedback capture</text>
+          <text x="1415" y="602" class="node-sub">RM outcomes → real training labels for stage 3</text></g>
+
+        <!-- Cross-cutting foundation strip -->
+        <text x="30" y="675" class="band-label">Underlies every stage above</text>
+
+        <rect class="strip-box" x="30" y="690" width="510" height="150" rx="8"/>
+        <text x="50" y="716" class="strip-title">Governance</text>
+        <text x="50" y="738" class="strip-item">IAM/RBAC in Snowflake (detector vs. evaluator roles, not a Python convention)</text>
+        <text x="50" y="756" class="strip-item">Secrets vault, not env vars</text>
+        <text x="50" y="774" class="strip-item">Audit log of every recommendation + action</text>
+        <text x="50" y="792" class="strip-item">LIA / EU AI Act documentation (see compliance notes)</text>
+        <text x="50" y="815" class="strip-item" style="font-style:italic">Ground-truth isolation boundary: built today, directory-level only</text>
+
+        <rect class="strip-box" x="565" y="690" width="510" height="150" rx="8"/>
+        <text x="585" y="716" class="strip-title">Observability</text>
+        <text x="585" y="738" class="strip-item">Structured logs, metrics, alerting</text>
+        <text x="585" y="756" class="strip-item">On-call runbooks</text>
+        <text x="585" y="774" class="strip-item">SLA/lag/staleness dashboards</text>
+        <text x="585" y="792" class="strip-item" style="font-style:italic">Today: print statements + a manual status snapshot</text>
+
+        <rect class="strip-box" x="1100" y="690" width="510" height="150" rx="8"/>
+        <text x="1120" y="716" class="strip-title">CI/CD &amp; delivery</text>
+        <text x="1120" y="738" class="strip-item">Containerized, deployed via IaC</text>
+        <text x="1120" y="756" class="strip-item">Golden conformance tests gate every release</text>
+        <text x="1120" y="774" class="strip-item">Real dev / staging / production environments</text>
+        <text x="1120" y="792" class="strip-item" style="font-style:italic">Today: runs from a source checkout in a local venv</text>
+
+      </svg>
+    </div>
+    <figcaption>
+      Read top to bottom as the same five pipeline stages you already have, each
+      widened to show what a real deployment needs beyond the POC version.
+      Governance, observability, and delivery aren't a sixth stage — they cut
+      across all five, which is why they're drawn as a foundation rather than
+      another step in the flow.
+    </figcaption>
+  </figure>
+
+  <table>
+    <caption>Build order — roughly the sequence I'd tackle this in, not a strict dependency chain</caption>
+    <thead><tr><th>Order</th><th>What</th><th>Why this position</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Wire &amp; test Snowflake for real</td><td>Sitting ready, just needs your account-side steps</td></tr>
+      <tr><td>2</td><td>Checkpoint / watermark store</td><td>Most load-bearing gap — replay, dashboards, and scaling all assume it exists</td></tr>
+      <tr><td>3</td><td>Stateful RM dashboard</td><td>Reuses the worklist table already built — needs persistence of RM action, not a redesign</td></tr>
+      <tr><td>4</td><td>Remaining 7 detectors + one real structured external source</td><td>Same pattern already proven twice; breadth, not new architecture</td></tr>
+      <tr><td>5</td><td>Scale state / LLM serving off single-machine</td><td>Deliberately late — don't solve a scale problem before it exists</td></tr>
+      <tr><td>6</td><td>Governance, observability, CI/CD, containers</td><td>The actually-shippable work — last, because none of it matters if detection isn't trustworthy yet</td></tr>
+    </tbody>
+  </table>
+
+  <footer>
+    Companion diagram to the current-pipeline "Pipeline Blueprint" artifact —
+    that one shows what runs today; this one shows the gap to a shippable
+    system. See <span style="font-family:'IBM Plex Mono',monospace">docs/gap_analysis.md</span>
+    and <span style="font-family:'IBM Plex Mono',monospace">docs/compliance_and_industry_context.md</span> in the repo.
+  </footer>
+</div>

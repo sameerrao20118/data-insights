@@ -1,0 +1,375 @@
+<!doctype html><html><head><!-- frame-runtime --><script>window.__FRAME_PREAMBLE={"v":1,"capabilities":{"artifact":"artifact.DfA2To-s.js","assets":"assets.8Gk803W0.js","comments":"comments.hEoja5zd.js","db":"db.h-3sndFg.js","downloads":"downloads.th1YuAIk.js","embed":"embed.eqL6deQM.js","endpoints":"endpoints.CfzSv5nM.js","mcp":"mcp.Bvma3qD7.js","network":"network.B5UA9Su4.js","permissions":"permissions.BNySkLV5.js","room":"room.VSdFwTE9.js","sample":"sample.BW2Uysoh.js","self":"artifact.DfA2To-s.js","user":"user.BpKav-Rf.js"},"transforms":"_transforms.-IAc0qoT.js","comments":"_comments.C-AkolIB.js","translate":"_translate.5HCW4BJh.js","ldx":"_ldx.f0k6Z2Dd.js"}</script><script>(function(){"use strict";var le=["light","dark","system"],ue=/^[A-Za-z0-9_-]{1,64}$/,J=/^[a-zA-Z_:][a-zA-Z0-9_:.-]{0,127}$/,fe=new Set(["class","hidden","value","checked","style","title","alt","placeholder","lang","dir","role","tabindex","disabled","readonly","contenteditable","open","colspan","rowspan"]);function de(e){const t=e.toLowerCase();return t.startsWith("data-")||t.startsWith("aria-")||fe.has(t)}var We="http://www.w3.org/1999/xhtml",pe="http://www.w3.org/2000/svg",me=new Set(["script","style","iframe","noscript","noframes","noembed","xmp","plaintext","template","title","textarea","object","embed"]),he=new Set(["script","style"]);function _e(e){const t=e.localName.toLowerCase();return e.namespaceURI==="http://www.w3.org/1999/xhtml"?!me.has(t):e.namespaceURI===pe?!he.has(t):!1}function I(e,t){return e===t||(e===160||e===32)&&(t===160||t===32)}function ve(e,t){const r=e.length,n=t.length;let a=0;for(;a<r&&a<n&&I(e.charCodeAt(a),t.charCodeAt(a));)a++;let s=0;for(;s<r-a&&s<n-a&&I(e.charCodeAt(r-1-s),t.charCodeAt(n-1-s));)s++;return{p:a,s}}function ye(e,t){const r=e.firstChild;if(e.childNodes.length!==1||r===null||r.nodeType!==Node.TEXT_NODE){e.textContent=t;return}const n=r.data,a=n.length,s=t.length,{p:c,s:i}=ve(n,t);c===a&&i===0&&a===s||r.replaceData(c,a-c-i,t.slice(c,s-i));const p=r.data,f=e.ownerDocument.getSelection?.()??null,v=f!==null&&f.rangeCount>0&&(f.anchorNode===r||f.focusNode===r)?{anchor:f.anchorNode,anchorOffset:f.anchorOffset,focus:f.focusNode,focusOffset:f.focusOffset}:null;let d=-1,y=-1;for(let _=0;_<p.length&&_<t.length;_++){const E=p.charCodeAt(_),T=t.charCodeAt(_);E!==T&&I(E,T)&&(d<0&&(d=_),y=_)}const w=d>=0;if(w&&r.replaceData(d,y-d+1,t.slice(d,y+1)),w&&v!==null&&v.anchor!==null&&v.focus!==null)try{f.setBaseAndExtent(v.anchor,v.anchorOffset,v.focus,v.focusOffset)}catch{}}var we=new Set(["html","head","body","frameset"]);function be(e){return e.namespaceURI==="http://www.w3.org/1999/xhtml"&&we.has(e.localName)}function Ee(e){if(e===null||typeof e!="object")return!1;const t=e;if(typeof t.target!="string"||!ue.test(t.target)||t.text!==void 0&&typeof t.text!="string")return!1;if(t.attrsSet!==void 0){if(t.attrsSet===null||typeof t.attrsSet!="object")return!1;for(const[r,n]of Object.entries(t.attrsSet))if(!J.test(r)||typeof n!="string")return!1}if(t.attrsRemoved!==void 0){if(!Array.isArray(t.attrsRemoved))return!1;for(const r of t.attrsRemoved)if(typeof r!="string"||!J.test(r))return!1}return!0}function ge(e,t){if(e===null||typeof e!="object")return!1;const{seq:r,elements:n}=e;if(typeof r!="number"||!Number.isSafeInteger(r)||!Array.isArray(n)||n.length===0||n.length>64)return!1;for(let a=0;a<n.length;a++)if(!t(n[a]))return!1;return!0}function Ae(e){return e===null||typeof e!="object"?!1:ge(e.__frame_patch,Ee)}function Te(e){if(e===null||typeof e!="object")return!1;const t=e.__frame_init;return t!==null&&typeof t=="object"}function Re(e){return e!==null&&typeof e=="object"&&e.__frame_size_poke===!0}function Le(e){if(e===null||typeof e!="object")return!1;const t=e.__frame_theme;if(t===null||typeof t!="object")return!1;const r=t.theme;return typeof r=="string"&&le.includes(r)}var L=/^[\w.-]+\.js$/;function Se(e,t,r){return r?"inert":typeof t=="string"&&L.test(t)?e?[t]:"inert":e?"inert":"framed"}var Ke="frame_ldx_runtime",$e="script#an-form";function ke(){return{post(e,t){parent.postMessage(e,t)},on(e){const t=r=>{r.source===parent&&e(r.data,r.origin,r.isTrusted)};return addEventListener("message",t),()=>removeEventListener("message",t)}}}function Pe(){return{post:()=>{},on:()=>()=>{}}}var U="__frame_scroll",Oe=150,Ce=310,Me=160,je=3e4;function Ne(){let e=0,t=!1,r=!1,n=!1,a=0,s=null;const c=u=>{try{sessionStorage.setItem(U,JSON.stringify({y:u}))}catch{}},i=()=>{if(clearTimeout(e),s===null)return;const u=s;s=null,c(u)},p=()=>{if(t){t=!1;return}r=!0,s=scrollY,clearTimeout(e),e=setTimeout(i,Oe)};try{addEventListener("scroll",p,{passive:!0}),addEventListener("pagehide",i)}catch{}const f=()=>{let u;try{u=sessionStorage.getItem(U)}catch{return null}if(u===null)return null;let b;try{b=JSON.parse(u)}catch{b=null}const o=b?.y;if(!(typeof o=="number"&&Number.isFinite(o)&&o>=0)){try{sessionStorage.removeItem(U)}catch{}return null}return o};let v=!1;const d=u=>{try{const b=scrollY;scrollTo({top:u,left:0,behavior:"instant"}),a=u,n=!0,clearTimeout(e),s=null,c(u);const o=scrollY;o!==b&&(t=!0),o!==u&&!v&&(v=!0,addEventListener("load",()=>{try{if(scrollY===o){const m=f();d(m!==null?m:a)}}catch{}},{once:!0}))}catch{}},y=()=>{try{return!!location.hash}catch{return!0}};let w=!1;const _=()=>{try{if(w||innerWidth>Ce||innerHeight>Me)return;w=!0;const u=Date.now(),b=()=>{try{removeEventListener("resize",b)}catch{}if(Date.now()-u>je||r||y())return;const o=f();d(o!==null?o:a)};addEventListener("resize",b)}catch{}};let E=!1,T=!1;return{restore(){if(E||(E=!0,y()))return;const u=f();u!==null&&(d(u),_())},promoted(){if(T||(T=!0,y()))return;const u=f();u!==null?(d(u),_()):n&&d(a)}}}function Be(e,t,r,n){let a=null;try{a=window.trustedTypes?.createPolicy("frame-runtime",{createScriptURL:p=>p})??null}catch{}const s=window.Worker,c=s?.prototype,i=Object.freeze({Worker:s,workerOn:c?.addEventListener,workerPost:c?.postMessage,workerTerminate:c?.terminate,fetch:window.fetch.bind(window),preventDefault:Event.prototype.preventDefault,policy:a,origins:t});r(e).then(p=>p?.bootTopLevel?p.bootTopLevel(i,n):n.settle()).catch(()=>n.settle())}var qe="modulepreload",Xe=function(e){return"/"+e},Ye={},De=function(t,r,n){let a=Promise.resolve();function s(c){const i=new Event("vite:preloadError",{cancelable:!0});if(i.payload=c,window.dispatchEvent(i),!i.defaultPrevented)throw c}return a.then(c=>{for(const i of c||[])i.status==="rejected"&&s(i.reason);return t().catch(s)})},Ie=window===top,Q=Object.getOwnPropertyDescriptor(window,"claude"),C=Se(Ie,window.__FRAME_PREAMBLE?.topLevel,Q?.writable===!1),x=typeof C=="object"&&C[0],h=x?Pe():ke();(function(){const e=Object.defineProperty,t=globalThis,r=["RTCPeerConnection","webkitRTCPeerConnection","RTCDataChannel","RTCIceCandidate","RTCSessionDescription","RTCRtpSender","RTCRtpReceiver"];let n=0;for(let a=0;a<r.length;a++){const s=r[a];try{e(t,s,{value:void 0,writable:!1,configurable:!1})}catch{try{delete t[s]}catch{}try{e(t,s,{value:void 0,writable:!1,configurable:!0})}catch{}}typeof t[s]=="function"&&n++}if(n&&C==="framed")try{h.post({__frame_rtc_lockdown_failed:n},"*")}catch{}})();var Ue=1e4,xe=2e3,ee=Object.freeze([...window.__FRAME_PREAMBLE?.origins??["https://claude.ai","https://preview.claude.ai"]]);function te(e){for(const t of ee)if(t.endsWith(":*"))try{const r=new URL(e);if(`${r.protocol}//${r.hostname}:*`===t)return!0}catch{}else if(e===t)return!0;return!1}var M=Object.freeze({...window.__FRAME_PREAMBLE?.capabilities}),F=window.__FRAME_PREAMBLE?.transforms,z=window.__FRAME_PREAMBLE?.comments,H=window.__FRAME_PREAMBLE?.translate,W=window.__FRAME_PREAMBLE?.ldx;function S(e){return De(()=>import("/_runtime/"+e),void 0)}function re(e,t){return{contract:e.contract,changes:new Set(e.changes??[]),flags:new Set(e.flags??[]),capabilities:e.capabilities??{},capBudgets:e.capBudgets??{},transforms:new Map,shellOrigin:t,mount:q,hooks:N,pipe:()=>({wrap:(r,n)=>(...a)=>{try{return n(...a)}catch(s){return Promise.reject(s)}}})}}var j=null,A=null;function ne(e,t,r){try{Object.defineProperty(e,t,{value:r,writable:!1,configurable:!1,enumerable:!0})}catch{try{Object.defineProperty(e,t,{value:r,writable:!1,configurable:!0,enumerable:!0})}catch{}}}var K=!1,N={editBefore:null,edit:null};function Fe(e,t,r=!1){const n=[];let a;if(r)try{N.editBefore?.(e)}catch{}for(const s of e.elements){const c=document.querySelector(`[data-id="${s.target}"]`);if(!c){a=s.target;break}if([...Object.keys(s.attrsSet??{}),...s.attrsRemoved??[]].some(i=>!de(i))){a=s.target;break}if(s.text!==void 0&&(!_e(c)||be(c))){a=s.target;break}for(const[i,p]of Object.entries(s.attrsSet??{}))if(!se(c,i)){try{c.setAttribute(i,p)}catch{}oe(c,i,p)}for(const i of s.attrsRemoved??[])se(c,i)||(c.removeAttribute(i),oe(c,i,null));typeof s.text=="string"&&ye(c,s.text),n.push(s.target)}if(r)try{N.edit?.(e.seq,n,a)}catch{}if(a!==void 0){h.post({__frame_patch_miss:{seq:e.seq}},t);return}try{document.dispatchEvent(new CustomEvent("claude:edit",{detail:{seq:e.seq,targets:n}}))}catch{}}function oe(e,t,r){if(!(e instanceof HTMLInputElement))return;const n=t.toLowerCase();n==="checked"?e.checked=r!==null:n==="value"&&e.type!=="file"&&(e.value=r??"")}function se(e,t){const r=t.toLowerCase(),n=e;return r==="data-id"||(r==="value"||r==="checked")&&(n.__artifactSecret===!0||/^(password|hidden|file)$/.test(n.type??"")||/(^|\s)(cc-|one-time-code|current-password|new-password)/i.test(`${e.getAttribute("autocomplete")??""} ${n.autocomplete??""}`))}function ae(e){const t=document.documentElement;e==="light"||e==="dark"?(t.dataset.theme=e,t.style.colorScheme=e,K=!0):K&&(delete t.dataset.theme,t.style.colorScheme="",K=!1)}var B=new Map;function ze(){let e;const t={u:new Promise(r=>{e=r}),r:r=>{t.done=!0,e(r)},done:!1,nulled:!1};return t}function $(){for(const e of B.values())e.done||(e.nulled=!0,e.r(null))}var He=Object.freeze(Object.assign(Object.create(null),{call:Function.prototype.call,apply:Function.prototype.apply,bind:Function.prototype.bind})),q=(e,t)=>{const r=B.get(e);if(!r||r.done){r?.nulled&&A&&h.post({__frame_cap_telemetry:{kind:"cap-load-error",cap:e}},A);return}const n=typeof t=="function"?Object.setPrototypeOf(t,He):Object.assign(Object.create(null),t);typeof n.then=="function"&&delete n.then,r.r(Object.freeze(n))};function ie(){const e=Q?.value??{};ne(window,"claude",e);for(const t of Object.keys(M)){if(e[t]!==void 0){ne(e,t,e[t]);continue}B.set(t,ze())}if(e.use===void 0){const t=r=>{if(typeof r!="string"||!Object.hasOwn(M,r))return Promise.resolve(null);const n=B.get(r);return n?n.u:Promise.resolve(e[r]??null)};try{Object.defineProperty(e,"use",{value:t,writable:!0,configurable:!0,enumerable:!1})}catch{}}}if(C==="framed"){const e=F&&L.test(F)?S(F).catch(()=>{}):Promise.resolve(void 0),t=o=>{if(o.type==="auxclick"&&o.button!==1)return;const m=o.target,k=m&&m.closest?m.closest("a[href],area[href]"):null;if(!k)return;const O=k.getAttribute("href");if(!O)return;let R;try{R=new URL(O,document.baseURI)}catch{return}if((R.protocol==="http:"||R.protocol==="https:")&&R.origin!==location.origin){o.preventDefault();const P=(k.getAttribute("target")??"").toLowerCase(),g=o.type==="auxclick"||o.metaKey||o.ctrlKey||o.shiftKey||o.altKey||!["","_self","_top","_parent"].includes(P);h.post({__frame_nav:!0,url:R.href,newTab:g},"*")}};addEventListener("click",t,!0),addEventListener("auxclick",t,!0);const r={},n=o=>{o.isTrusted&&(r.pointer=!0)},a=o=>{o.isTrusted&&(r.click=!0)};addEventListener("pointermove",n,{capture:!0,passive:!0}),addEventListener("click",a,{capture:!0,passive:!0});const s={cb:null};addEventListener("keydown",o=>s.cb?.(o),!0),e.then(o=>o?.installEscapeForward?.(s,m=>{A&&h.post(m,A)})),e.then(o=>{o?.wireNav&&(o.wireNav(),removeEventListener("click",t,!0),removeEventListener("auxclick",t,!0),removeEventListener("pointermove",n,!0),removeEventListener("click",a,!0),o.wireEngagement?.(r))});let c=null;try{c=Ne()}catch{}ie();let i=null,p=null,f=0;const v=h.on((o,m)=>{te(m)&&Te(o)&&(i=o.__frame_init,A=m,v(),clearTimeout(f),p?.())});h.post({__frame_connect:!0},"*");const d=setTimeout,y=clearTimeout;let w=0;const _=()=>{try{h.post({__frame_alive:!0},"*")}catch{}w=d(_,xe)},E=()=>y(w);_(),addEventListener("load",E,{once:!0});const T=new Promise(o=>{p=o,f=setTimeout(()=>{v(),o()},Ue)}),u=document.readyState==="loading"?new Promise(o=>document.addEventListener("DOMContentLoaded",()=>o(),{once:!0})):Promise.resolve();u.then(()=>{try{c?.restore()}catch{}});const b={cb:null};h.on((o,m)=>{if(te(m)&&Re(o)){try{c?.promoted()}catch{}b.cb?.()}}),T.then(async()=>{if(!i||!A){$();return}ae(i.theme);const o=A;let m=!1,k=!1;h.on((l,Y,D)=>{if(Y!==o)return;Le(l)&&ae(l.__frame_theme.theme),Ae(l)&&Fe(l.__frame_patch,o,D);const G=l?.__fc_mode;G&&typeof G=="object"&&!m&&z&&L.test(z)&&(m=!0,S(z).then(Z=>Z.install?.(o,G.on===!0)).catch(()=>{}));const V=l?.__ft_cmd;V&&typeof V=="object"&&!k&&H&&L.test(H)&&(k=!0,S(H).then(Z=>Z.install?.(o,V)).catch(()=>{}))});const O=Object.keys(i.capabilities??{}).filter(l=>Object.hasOwn(M,l)).map(l=>[l,M[l]]).filter(l=>typeof l[1]=="string"&&L.test(l[1])),R=await Promise.allSettled(O.map(([,l])=>S(l))),P=await e,g=A;if(P?.buildBoot||h.post({__frame_cap_telemetry:{kind:"cap-load-error",cap:"_transforms"}},g),P?.buildBoot)try{j=P.buildBoot(i,P.TRANSFORMS??{},{shellOrigin:g,mount:q,hooks:N},l=>h.post({__frame_cap_telemetry:l},g))}catch{h.post({__frame_cap_telemetry:{kind:"cap-load-error",cap:"_transforms"}},g),j=re(i,g)}else j=re(i,g);const X=l=>h.post({__frame_cap_telemetry:{kind:"cap-load-error",cap:l}},g),ce=j;R.forEach((l,Y)=>{const D=O[Y][0];if(l.status!=="fulfilled"){X(D);return}try{l.value?.install?.(ce)}catch{X(D)}}),$(),await u,E(),h.post({__frame_ready:!0},A),e.then(l=>l?.installSizeReporter?.(g,b)),ce.flags.has("frame_ldx_runtime")&&W&&L.test(W)&&document.querySelector("script#an-form")&&S(W).then(l=>l?.boot?.()).catch(()=>!1).then(l=>{l!==!0&&X("_ldx")})})}else x&&(ie(),Be(x,ee,S,{settle:$,mount:q}))})();</script><!-- /frame-runtime --><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found]){display:none!important}</style></head><body>
+<title>Pipeline Blueprint</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --bg:#EDF0EC;
+    --surface:#F7F9F6;
+    --ink:#1B2320;
+    --ink-soft:#4B534E;
+    --rule:#D8DCD5;
+    --active:#1F6E5C;
+    --active-fill:#E4F1EC;
+    --pending:#83897F;
+    --pending-fill:#F1F2EF;
+    --protected:#9C3D3D;
+    --protected-fill:#F7ECEC;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#131714;
+      --surface:#1A201C;
+      --ink:#E9ECE6;
+      --ink-soft:#A9B0A5;
+      --rule:#2C322D;
+      --active:#4FBE9C;
+      --active-fill:#17332B;
+      --pending:#8B928A;
+      --pending-fill:#20251F;
+      --protected:#D98686;
+      --protected-fill:#3A2222;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#131714;
+    --surface:#1A201C;
+    --ink:#E9ECE6;
+    --ink-soft:#A9B0A5;
+    --rule:#2C322D;
+    --active:#4FBE9C;
+    --active-fill:#17332B;
+    --pending:#8B928A;
+    --pending-fill:#20251F;
+    --protected:#D98686;
+    --protected-fill:#3A2222;
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'IBM Plex Sans', system-ui, sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px; margin:0 auto; padding:56px 28px 80px;}
+
+  .eyebrow{
+    font-family:'IBM Plex Mono', ui-monospace, monospace;
+    font-size:11px; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--active); font-weight:600; margin:0 0 10px;
+  }
+  h1{
+    font-size:clamp(28px,4vw,38px); font-weight:600; letter-spacing:-.01em;
+    margin:0 0 12px; text-wrap:balance;
+  }
+  .lede{
+    font-size:16px; line-height:1.6; color:var(--ink-soft); max-width:640px;
+    margin:0 0 30px;
+  }
+
+  .legend{
+    display:flex; flex-wrap:wrap; gap:22px; align-items:center;
+    padding:14px 18px; border:1px solid var(--rule); border-radius:8px;
+    background:var(--surface); margin-bottom:34px;
+  }
+  .legend-item{display:flex; align-items:center; gap:9px; font-size:12.5px; color:var(--ink-soft);}
+  .legend-item svg{display:block; flex:none;}
+
+  figure{margin:0 0 40px;}
+  .diagram-frame{
+    border:1px solid var(--rule); border-radius:10px; background:var(--surface);
+    padding:18px; overflow-x:auto;
+  }
+  .diagram-frame svg{display:block; max-width:100%; height:auto; min-width:1040px;}
+  figcaption{
+    font-size:12.5px; color:var(--ink-soft); margin-top:12px; line-height:1.5;
+  }
+
+  /* --- diagram node/edge styling (applies to the inline SVG above) --- */
+  .node rect{stroke-width:1.6;}
+  .node.active rect{fill:var(--active-fill); stroke:var(--active);}
+  .node.pending rect{fill:var(--pending-fill); stroke:var(--pending); stroke-dasharray:5 4;}
+  .node.protected rect{fill:var(--protected-fill); stroke:var(--protected); stroke-dasharray:5 4;}
+  .node-title{font-family:'IBM Plex Mono', monospace; font-size:12.5px; font-weight:600; text-anchor:middle;}
+  .node.active .node-title{fill:var(--active);}
+  .node.pending .node-title{fill:var(--pending);}
+  .node.protected .node-title{fill:var(--protected);}
+  .node-sub{font-family:'IBM Plex Sans', sans-serif; font-size:10.5px; fill:var(--ink-soft); text-anchor:middle;}
+
+  .edge{fill:none; stroke-width:1.6;}
+  .edge.active{stroke:var(--active);}
+  .edge.pending{stroke:var(--pending); stroke-dasharray:5 4;}
+  .edge.protected{stroke:var(--protected); stroke-dasharray:5 4;}
+
+  .mk-active{fill:var(--active);}
+  .mk-pending{fill:var(--pending);}
+  .mk-protected{fill:var(--protected);}
+
+  .col-label{
+    font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.08em;
+    text-transform:uppercase; fill:var(--ink-soft); text-anchor:middle;
+  }
+  .edge-label{
+    font-family:'IBM Plex Mono', monospace; font-size:10px; fill:var(--ink-soft);
+  }
+  .zone-label{
+    font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.06em;
+    text-transform:uppercase;
+  }
+  .zone-note{font-family:'IBM Plex Sans', sans-serif; font-size:10.5px; fill:var(--ink-soft);}
+  .tiny{font-family:'IBM Plex Mono', monospace; font-size:10px; fill:var(--ink-soft); text-anchor:middle;}
+  .tiny-italic{font-family:'IBM Plex Sans', sans-serif; font-size:10px; fill:var(--ink-soft); text-anchor:middle; font-style:italic;}
+  .zone-rect{fill:none; stroke:var(--protected); stroke-width:1.4; stroke-dasharray:6 5; rx:10;}
+
+  table{width:100%; border-collapse:collapse; font-size:13.5px;}
+  caption{text-align:left; font-size:12.5px; color:var(--ink-soft); margin-bottom:10px;}
+  th{
+    text-align:left; font-family:'IBM Plex Mono', monospace; font-size:10.5px;
+    letter-spacing:.07em; text-transform:uppercase; color:var(--ink-soft);
+    padding:0 14px 10px 0; border-bottom:1px solid var(--rule); font-weight:500;
+  }
+  td{padding:11px 14px 11px 0; border-bottom:1px solid var(--rule); vertical-align:top;}
+  td.path{font-family:'IBM Plex Mono', monospace; font-size:12.5px; color:var(--ink-soft);}
+  .badge{
+    display:inline-block; font-family:'IBM Plex Mono', monospace; font-size:10.5px;
+    letter-spacing:.04em; padding:2px 8px; border-radius:20px; white-space:nowrap;
+  }
+  .badge.active{color:var(--active); background:var(--active-fill); border:1px solid var(--active);}
+  .badge.pending{color:var(--pending); background:var(--pending-fill); border:1px solid var(--pending);}
+  .badge.protected{color:var(--protected); background:var(--protected-fill); border:1px solid var(--protected);}
+
+  footer{margin-top:36px; font-size:12px; color:var(--ink-soft); line-height:1.6;}
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">DataInsights — NBA/EBM proof of concept</p>
+  <h1>How the full solution works</h1>
+  <p class="lede">
+    The detect-to-digest pipeline as it actually runs today (solid), the isolation
+    boundary that keeps ground truth out of the detector (red), and what's planned
+    but not yet built (dashed grey). Every box below maps to a real file — see the
+    table underneath the diagram.
+  </p>
+
+  <div class="legend">
+    <span class="legend-item">
+      <svg width="30" height="10" viewBox="0 0 30 10"><line x1="0" y1="5" x2="30" y2="5" stroke="var(--active)" stroke-width="2"/></svg>
+      Active / verified
+    </span>
+    <span class="legend-item">
+      <svg width="30" height="10" viewBox="0 0 30 10"><line x1="0" y1="5" x2="30" y2="5" stroke="var(--pending)" stroke-width="2" stroke-dasharray="5 4"/></svg>
+      Not run / not built
+    </span>
+    <span class="legend-item">
+      <svg width="30" height="10" viewBox="0 0 30 10"><line x1="0" y1="5" x2="30" y2="5" stroke="var(--protected)" stroke-width="2" stroke-dasharray="5 4"/></svg>
+      Protected — evaluator only
+    </span>
+  </div>
+
+  <figure>
+    <div class="diagram-frame">
+      <svg viewBox="0 0 1600 760" role="img" aria-label="Pipeline flow from a configured data source through contract validation, detection, ranking, narrative generation with a validate-and-fallback gate, state storage, and an RM digest; a separately isolated evaluator reads protected ground truth and detector state but the detector never reads ground truth; a planned replay/monitor loop and AWS path are shown dashed as not built.">
+
+        <defs>
+          <marker id="arrow-active" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <polygon class="mk-active" points="0,0 8,4 0,8"/>
+          </marker>
+          <marker id="arrow-pending" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <polygon class="mk-pending" points="0,0 8,4 0,8"/>
+          </marker>
+          <marker id="arrow-protected" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <polygon class="mk-protected" points="0,0 8,4 0,8"/>
+          </marker>
+        </defs>
+
+        <!-- column eyebrows -->
+        <text x="135" y="42" class="col-label">Source</text>
+        <text x="355" y="42" class="col-label">Contract</text>
+        <text x="575" y="42" class="col-label">Detector</text>
+        <text x="795" y="42" class="col-label">Ranking</text>
+        <text x="1015" y="42" class="col-label">Narrative</text>
+        <text x="1230" y="42" class="col-label">State</text>
+        <text x="1440" y="42" class="col-label">Digest</text>
+
+        <!-- Source (fork) -->
+        <g class="node active">
+          <rect x="40" y="70" width="190" height="60" rx="7"/>
+          <text x="135" y="96" class="node-title">OfflineLocalSource</text>
+          <text x="135" y="112" class="node-sub">DuckDB over CSV</text>
+        </g>
+        <g class="node pending">
+          <rect x="40" y="170" width="190" height="60" rx="7"/>
+          <text x="135" y="196" class="node-title">SnowflakeSource</text>
+          <text x="135" y="212" class="node-sub">needs your credentials</text>
+        </g>
+
+        <!-- Contract -->
+        <g class="node active">
+          <rect x="270" y="110" width="170" height="60" rx="7"/>
+          <text x="355" y="136" class="node-title">entities.yaml</text>
+          <text x="355" y="152" class="node-sub">grain · types · currency rules</text>
+        </g>
+
+        <!-- Source -> Contract -->
+        <path class="edge active" d="M230,100 C250,100 250,140 270,140" marker-end="url(#arrow-active)"/>
+        <path class="edge pending" d="M230,200 C250,200 250,140 270,140" marker-end="url(#arrow-pending)"/>
+        <text x="242" y="95" class="edge-label">read_entity()</text>
+
+        <!-- Detector -->
+        <g class="node active">
+          <rect x="480" y="110" width="190" height="60" rx="7"/>
+          <text x="575" y="136" class="node-title">large_incoming_payment</text>
+          <text x="575" y="152" class="node-sub">point-in-time baseline</text>
+        </g>
+        <path class="edge active" d="M440,140 L480,140" marker-end="url(#arrow-active)"/>
+        <text x="460" y="132" class="edge-label" text-anchor="middle">bounded batch</text>
+
+        <!-- Detector dead-ends -->
+        <line x1="575" y1="170" x2="575" y2="196" class="edge pending" marker-end="url(#arrow-pending)"/>
+        <text x="575" y="212" class="tiny">insufficient_evidence /</text>
+        <text x="575" y="226" class="tiny">suppressed_cooldown</text>
+        <text x="575" y="242" class="tiny-italic">recorded, not ranked</text>
+
+        <!-- Ranking -->
+        <g class="node active">
+          <rect x="710" y="110" width="170" height="60" rx="7"/>
+          <text x="795" y="136" class="node-title">ranking.py</text>
+          <text x="795" y="152" class="node-sub">magnitude + recency</text>
+        </g>
+        <path class="edge active" d="M670,140 L710,140" marker-end="url(#arrow-active)"/>
+        <text x="690" y="132" class="edge-label" text-anchor="middle">detected only</text>
+
+        <!-- Narrator -->
+        <g class="node active">
+          <rect x="920" y="110" width="190" height="60" rx="7"/>
+          <text x="1015" y="136" class="node-title">Ollama narrator</text>
+          <text x="1015" y="152" class="node-sub">qwen2.5:7b · structured output</text>
+        </g>
+        <path class="edge active" d="M880,140 L920,140" marker-end="url(#arrow-active)"/>
+
+        <!-- Gate -->
+        <line x1="1015" y1="170" x2="1015" y2="192" class="edge active" marker-end="url(#arrow-active)"/>
+        <polygon points="1015,192 1070,227 1015,262 960,227" fill="var(--surface)" stroke="var(--ink-soft)" stroke-width="1.3"/>
+        <text x="1015" y="223" class="tiny">schema +</text>
+        <text x="1015" y="235" class="tiny">numeric check</text>
+
+        <!-- Template fallback -->
+        <g class="node active">
+          <rect x="920" y="300" width="190" height="60" rx="7"/>
+          <text x="1015" y="326" class="node-title">template.py</text>
+          <text x="1015" y="342" class="node-sub">deterministic fallback</text>
+        </g>
+        <line x1="1015" y1="262" x2="1015" y2="300" class="edge pending" marker-end="url(#arrow-pending)"/>
+        <text x="1026" y="284" class="edge-label">invalid / timeout</text>
+
+        <!-- State -->
+        <g class="node active">
+          <rect x="1150" y="110" width="160" height="60" rx="7"/>
+          <text x="1230" y="136" class="node-title">state.py</text>
+          <text x="1230" y="152" class="node-sub">SQLite · idempotent</text>
+        </g>
+        <path class="edge active" d="M1070,215 C1110,215 1110,140 1150,140" marker-end="url(#arrow-active)"/>
+        <text x="1096" y="185" class="edge-label">valid</text>
+        <path class="edge active" d="M1110,325 C1160,325 1160,150 1150,140" marker-end="url(#arrow-active)"/>
+        <text x="1128" y="300" class="edge-label">fallback narrative</text>
+
+        <!-- Digest -->
+        <g class="node active">
+          <rect x="1350" y="110" width="180" height="60" rx="7"/>
+          <text x="1440" y="136" class="node-title">digest_*.md</text>
+          <text x="1440" y="152" class="node-sub">RM-facing, terminal</text>
+        </g>
+        <path class="edge active" d="M1310,140 L1350,140" marker-end="url(#arrow-active)"/>
+
+        <!-- Judge -->
+        <g class="node active">
+          <rect x="1290" y="230" width="170" height="60" rx="7"/>
+          <text x="1375" y="256" class="node-title">offline judge</text>
+          <text x="1375" y="272" class="node-sub">llama3.1:8b (different model)</text>
+        </g>
+        <path class="edge pending" d="M1305,170 C1305,200 1330,205 1345,230" marker-end="url(#arrow-pending)"/>
+        <text x="1300" y="200" class="edge-label">sample n, offline</text>
+        <line x1="1375" y1="290" x2="1375" y2="312" class="edge pending" marker-end="url(#arrow-pending)"/>
+        <text x="1375" y="326" class="tiny">report only — no path back into ranking</text>
+
+        <!-- Evaluator isolation zone -->
+        <rect class="zone-rect" x="450" y="420" width="780" height="150" rx="10"/>
+        <text x="470" y="442" class="zone-label" fill="var(--protected)">Evaluator role only</text>
+        <text x="470" y="552" class="zone-note">detection_engine/ has no import path into this zone</text>
+
+        <g class="node protected">
+          <rect x="490" y="460" width="280" height="60" rx="7"/>
+          <text x="630" y="486" class="node-title">trigger_events.csv</text>
+          <text x="630" y="502" class="node-sub">protected_evaluator_only/</text>
+        </g>
+        <g class="node protected">
+          <rect x="900" y="460" width="280" height="60" rx="7"/>
+          <text x="1040" y="486" class="node-title">evaluate.py</text>
+          <text x="1040" y="502" class="node-sub">precision / recall (dev diagnostic)</text>
+        </g>
+        <path class="edge protected" d="M770,490 L900,490" marker-end="url(#arrow-protected)"/>
+        <text x="800" y="482" class="edge-label">ground truth</text>
+
+        <path class="edge active" d="M1160,170 L1160,460 L900,460" marker-end="url(#arrow-active)"/>
+        <text x="1168" y="330" class="edge-label">detections</text>
+
+        <!-- Future strip -->
+        <text x="800" y="637" class="col-label">Planned — not built</text>
+
+        <g class="node pending">
+          <rect x="270" y="650" width="300" height="60" rx="7"/>
+          <text x="420" y="676" class="node-title">Replay / monitor loop</text>
+          <text x="420" y="692" class="node-sub">virtual clock + checkpoints</text>
+        </g>
+        <path class="edge pending" d="M420,650 C420,420 135,420 135,232" marker-end="url(#arrow-pending)"/>
+
+        <g class="node pending">
+          <rect x="900" y="650" width="300" height="60" rx="7"/>
+          <text x="1050" y="676" class="node-title">AWS path</text>
+          <text x="1050" y="692" class="node-sub">Athena / Glue / S3 → Bedrock</text>
+        </g>
+        <path class="edge pending" d="M1050,650 C1050,460 1015,460 1015,362" marker-end="url(#arrow-pending)"/>
+
+      </svg>
+    </div>
+    <figcaption>
+      Two source adapters share one contract, so the detector never changes when the
+      backend does. A validation gate after the local LLM narrator falls back to a
+      deterministic template rather than ever emitting unchecked output. The
+      evaluator is the only code path allowed to read ground truth — the detector's
+      own detections flow to it, but nothing flows back.
+    </figcaption>
+  </figure>
+
+  <table>
+    <caption>Stage → real file, and its current status</caption>
+    <thead>
+      <tr><th>Stage</th><th>File</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Source — offline</td><td class="path">datainsights/sources/offline_local.py</td><td><span class="badge active">active</span></td></tr>
+      <tr><td>Source — Snowflake</td><td class="path">datainsights/sources/snowflake_source.py</td><td><span class="badge pending">not run</span></td></tr>
+      <tr><td>Contract</td><td class="path">config/entities.yaml</td><td><span class="badge active">active</span></td></tr>
+      <tr><td>Detector</td><td class="path">detection_engine/large_incoming_payment.py</td><td><span class="badge active">active · 9/9 tests</span></td></tr>
+      <tr><td>Ranking</td><td class="path">datainsights/ranking.py</td><td><span class="badge active">active</span></td></tr>
+      <tr><td>Narrator</td><td class="path">datainsights/narrative/ollama_narrator.py</td><td><span class="badge active">active</span></td></tr>
+      <tr><td>Template fallback</td><td class="path">datainsights/narrative/template.py</td><td><span class="badge active">active</span></td></tr>
+      <tr><td>Judge</td><td class="path">datainsights/judge/offline_judge.py</td><td><span class="badge active">active · sampled</span></td></tr>
+      <tr><td>State</td><td class="path">datainsights/state.py → var/state.sqlite</td><td><span class="badge active">active</span></td></tr>
+      <tr><td>Digest</td><td class="path">datainsights/digest.py → var/insights/</td><td><span class="badge active">active</span></td></tr>
+      <tr><td>Evaluator</td><td class="path">evaluation/evaluate.py</td><td><span class="badge active">active · dev-diagnostic only</span></td></tr>
+      <tr><td>Protected ground truth</td><td class="path">data_generator/.../protected_evaluator_only/trigger_events.csv</td><td><span class="badge protected">isolated</span></td></tr>
+      <tr><td>Replay / monitor loop</td><td class="path">— not yet written</td><td><span class="badge pending">not built</span></td></tr>
+      <tr><td>AWS path</td><td class="path">— not yet written</td><td><span class="badge pending">not built</span></td></tr>
+    </tbody>
+  </table>
+
+  <footer>
+    Synthetic proof-of-concept. See <span class="path" style="font-family:'IBM Plex Mono',monospace">docs/architecture.md</span>
+    and <span style="font-family:'IBM Plex Mono',monospace">docs/current_state.md</span> in the repo for the full write-up this diagram summarizes.
+  </footer>
+</div>
+
+</body></html>

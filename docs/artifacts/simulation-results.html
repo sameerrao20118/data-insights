@@ -1,0 +1,209 @@
+<title>Simulation Results</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --bg:#EDF0EC; --surface:#F7F9F6; --ink:#1B2320; --ink-soft:#4B534E; --rule:#D8DCD5;
+    --active:#1F6E5C; --active-fill:#E4F1EC;
+    --pending:#83897F; --pending-fill:#F1F2EF;
+    --amber:#8A6A2A; --amber-fill:#F3ECDD;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#131714; --surface:#1A201C; --ink:#E9ECE6; --ink-soft:#A9B0A5; --rule:#2C322D;
+      --active:#4FBE9C; --active-fill:#17332B;
+      --pending:#8B928A; --pending-fill:#20251F;
+      --amber:#D3AC5C; --amber-fill:#332B18;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#131714; --surface:#1A201C; --ink:#E9ECE6; --ink-soft:#A9B0A5; --rule:#2C322D;
+    --active:#4FBE9C; --active-fill:#17332B;
+    --pending:#8B928A; --pending-fill:#20251F;
+    --amber:#D3AC5C; --amber-fill:#332B18;
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--ink); font-family:'IBM Plex Sans', system-ui, sans-serif; -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:980px; margin:0 auto; padding:56px 28px 80px;}
+
+  .eyebrow{font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:var(--active); font-weight:600; margin:0 0 10px;}
+  h1{font-size:clamp(30px,4.2vw,42px); font-weight:600; letter-spacing:-.01em; margin:0 0 14px; text-wrap:balance;}
+  .lede{font-size:16.5px; line-height:1.65; color:var(--ink-soft); max-width:680px; margin:0 0 20px;}
+
+  .status-chip{
+    display:inline-flex; align-items:center; gap:8px; font-family:'IBM Plex Mono', monospace;
+    font-size:11.5px; padding:6px 14px; border-radius:20px; background:var(--amber-fill);
+    color:var(--amber); border:1px solid var(--amber); margin-bottom:36px;
+  }
+
+  h2{font-size:20px; font-weight:600; letter-spacing:-.005em; margin:0 0 4px;}
+  .section-note{font-size:13.5px; color:var(--ink-soft); margin:0 0 20px; max-width:640px; line-height:1.55;}
+  section{margin-bottom:48px;}
+
+  .stat-row{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:40px;}
+  .stat-tile{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:18px 16px;}
+  .stat-num{font-family:'IBM Plex Mono', monospace; font-size:28px; font-weight:600; color:var(--active); font-variant-numeric:tabular-nums; line-height:1.1;}
+  .stat-label{font-size:11.5px; color:var(--ink-soft); margin-top:6px; line-height:1.4;}
+
+  .chart-card{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:22px 22px 10px;}
+  .bar-row{display:flex; align-items:center; gap:12px; margin-bottom:14px;}
+  .bar-label{width:190px; flex:none; font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--ink); text-align:right;}
+  .bar-track{flex:1; height:20px; position:relative; background:var(--pending-fill); border-radius:4px; overflow:visible;}
+  .bar-fill{height:20px; background:var(--active); border-radius:4px; position:relative; transition:filter .12s;}
+  .bar-fill:hover{filter:brightness(1.12);}
+  .bar-value{font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--ink-soft); margin-left:8px; font-variant-numeric:tabular-nums;}
+  .bar-tooltip{
+    position:absolute; top:-32px; left:0; background:var(--ink); color:var(--bg);
+    font-family:'IBM Plex Mono', monospace; font-size:11px; padding:4px 9px; border-radius:5px;
+    white-space:nowrap; opacity:0; pointer-events:none; transition:opacity .12s;
+  }
+  .bar-fill:hover .bar-tooltip{opacity:1;}
+
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  caption{text-align:left; font-size:12.5px; color:var(--ink-soft); margin-bottom:10px;}
+  th{text-align:left; font-family:'IBM Plex Mono', monospace; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-soft); padding:0 12px 9px 0; border-bottom:1px solid var(--rule); font-weight:500;}
+  td{padding:10px 12px 10px 0; border-bottom:1px solid var(--rule); vertical-align:top;}
+  td.mono{font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--ink-soft);}
+  .cat-pill{font-family:'IBM Plex Mono', monospace; font-size:10px; padding:2px 8px; border-radius:20px; background:var(--active-fill); color:var(--active); border:1px solid var(--active); white-space:nowrap;}
+
+  .verify-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  .verify-card{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:18px 20px;}
+  .verify-card h3{font-size:14.5px; margin:0 0 8px; font-weight:600;}
+  .verify-card p{font-size:13px; line-height:1.6; color:var(--ink-soft); margin:0 0 6px;}
+  .verify-result{font-family:'IBM Plex Mono', monospace; font-size:13px; color:var(--active); font-weight:600;}
+
+  .path-list{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:18px 20px; font-family:'IBM Plex Mono', monospace; font-size:12.5px; line-height:2;}
+  .path-list .desc{color:var(--ink-soft); font-family:'IBM Plex Sans', sans-serif; font-size:12.5px;}
+
+  code.cmd{background:var(--surface); border:1px solid var(--rule); border-radius:5px; padding:2px 7px; font-family:'IBM Plex Mono', monospace; font-size:12.5px;}
+
+  .caveat-box{background:var(--amber-fill); border:1px solid var(--amber); border-radius:10px; padding:18px 20px; font-size:13px; line-height:1.65; color:var(--ink);}
+  .caveat-box strong{color:var(--amber);}
+
+  footer{margin-top:36px; font-size:12px; color:var(--ink-soft); line-height:1.6; border-top:1px solid var(--rule); padding-top:20px;}
+
+  @media (max-width:640px){
+    .stat-row{grid-template-columns:repeat(2,1fr);}
+    .verify-grid{grid-template-columns:1fr;}
+    .bar-label{width:120px; font-size:10.5px;}
+  }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">DataInsights — NBA/EBM proof of concept</p>
+  <h1>What the simulation actually produces</h1>
+  <p class="lede">
+    A live, reproducible run of the full pipeline — both event categories,
+    end to end — with the real numbers it generated. Not a mockup: every
+    figure on this page came out of an actual run on 2026-09-05.
+  </p>
+  <div class="status-chip">⬤ Synthetic proof-of-concept — see caveats before treating any number as validated</div>
+
+  <section>
+    <h2>Scale of this run</h2>
+    <p class="section-note">300 synthetic commercial/institutional clients, 3 years of transaction history, both the endogenous (transaction-pattern) and exogenous (market/industry/political event) detectors running together.</p>
+    <div class="stat-row">
+      <div class="stat-tile"><div class="stat-num">16/16</div><div class="stat-label">detector tests passing</div></div>
+      <div class="stat-tile"><div class="stat-num">300/300</div><div class="stat-label">clients with ≥1 ranked recommendation</div></div>
+      <div class="stat-tile"><div class="stat-num">2,797</div><div class="stat-label">total recommendations generated</div></div>
+      <div class="stat-tile"><div class="stat-num">6</div><div class="stat-label">commercial categories tagged</div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Recommendations by category</h2>
+    <p class="section-note">Every row is tagged with what kind of conversation it suggests — not every flagged event is a sales opportunity; a third of these are risk/advisory, not financing-relevant.</p>
+    <div class="chart-card">
+      <div class="bar-row">
+        <div class="bar-label">FINANCING_NEED</div>
+        <div class="bar-track"><div class="bar-fill" style="width:100%"><span class="bar-tooltip">1,284 recommendations</span></div></div>
+        <div class="bar-value">1,284</div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-label">TREASURY_OPPORTUNITY</div>
+        <div class="bar-track"><div class="bar-fill" style="width:40.6%"><span class="bar-tooltip">521 recommendations</span></div></div>
+        <div class="bar-value">521</div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-label">RISK_REVIEW</div>
+        <div class="bar-track"><div class="bar-fill" style="width:35.1%"><span class="bar-tooltip">451 recommendations</span></div></div>
+        <div class="bar-value">451</div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-label">ADVISORY_ONLY</div>
+        <div class="bar-track"><div class="bar-fill" style="width:24.1%"><span class="bar-tooltip">310 recommendations</span></div></div>
+        <div class="bar-value">310</div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-label">HEDGING_NEED</div>
+        <div class="bar-track"><div class="bar-fill" style="width:13.3%"><span class="bar-tooltip">171 recommendations</span></div></div>
+        <div class="bar-value">171</div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-label">CAPEX_FINANCING</div>
+        <div class="bar-track"><div class="bar-fill" style="width:4.7%"><span class="bar-tooltip">60 recommendations</span></div></div>
+        <div class="bar-value">60</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Sample of the actual worklist</h2>
+    <p class="section-note">Real rows from <span style="font-family:'IBM Plex Mono',monospace">var/insights/worklist_20260905T151610Z.csv</span> — top of the ranked list, unedited.</p>
+    <div style="overflow-x:auto">
+    <table>
+      <thead><tr><th>Rank</th><th>Score</th><th>Category</th><th>Client</th><th>Segment / Sector</th><th>Recommended action</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">1</td><td class="mono">0.97</td><td><span class="cat-pill">FINANCING_NEED</span></td><td>van Mook NV (CL00207)</td><td>Mid-Corp · Agriculture &amp; Food</td><td>RM to review whether this client is materially exposed to the event</td></tr>
+        <tr><td class="mono">5</td><td class="mono">0.72</td><td><span class="cat-pill">TREASURY_OPPORTUNITY</span></td><td>Haering (CL00288)</td><td>Mid-Corp · Prof. Services</td><td>RM to review the transaction and recent account activity</td></tr>
+        <tr><td class="mono">7</td><td class="mono">0.71</td><td><span class="cat-pill">TREASURY_OPPORTUNITY</span></td><td>Bien Bloch KG (CL00178)</td><td>SME · Construction</td><td>RM to review the transaction and recent account activity</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>What "verified" means here</h2>
+    <p class="section-note">Two different, honest claims — don't collapse them into one "it works."</p>
+    <div class="verify-grid">
+      <div class="verify-card">
+        <h3>Logic correctness</h3>
+        <p>16 hand-written test cases — below-minimum history, idempotent reruns, multi-currency independence, no future leakage, cooldown suppression, and 7 more — check the detector does exactly what its spec says.</p>
+        <div class="verify-result">16 / 16 passing</div>
+      </div>
+      <div class="verify-card">
+        <h3>Detection against embedded ground truth</h3>
+        <p>Precision 0.09, recall 0.66–0.83 across two independently-seeded datasets, against a narrow injected label. <strong>This is a development diagnostic, not a clean benchmark</strong> — the same session that built the detector also built the labels.</p>
+        <div class="verify-result">Consistent across 2 seeds</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Reproduce this yourself</h2>
+    <p class="section-note">One command, from the repo root:</p>
+    <div class="path-list">
+      <code class="cmd">./run_demo.sh</code><br>
+      <span class="desc">— runs tests, both detectors, the evaluation harness, and rebuilds the worklist, in order</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Where the output actually lives</h2>
+    <div class="path-list">
+      var/insights/digest_*.md <span class="desc">— narrative digest, one per run, human-readable</span><br>
+      var/insights/worklist_*.csv <span class="desc">— the unified table shown above, opens directly in Excel/Sheets</span><br>
+      var/state.sqlite <span class="desc">— transaction-detector history, idempotent across reruns</span><br>
+      var/state_external_events.sqlite <span class="desc">— macro-event-detector history</span>
+    </div>
+  </section>
+
+  <div class="caveat-box">
+    <strong>Before you show this to anyone:</strong> this is a synthetic dataset with injected patterns — no real client, transaction, or event on this page is real. The precision/recall figures above are development diagnostics from a contaminated session (the same work that built the detector also built the test labels), not a validated benchmark. No revenue, conversion, or business outcome is proven or claimed anywhere in this system — see <span style="font-family:'IBM Plex Mono',monospace">docs/objective.md</span> for exactly what this POC does and doesn't establish.
+  </div>
+
+  <footer>
+    Generated from a live run on 2026-09-05. Companion artifacts: "Pipeline Blueprint" (how it runs today) and "Production Blueprint" (the gap to a shippable system) — ask for their links if you don't have them handy.
+  </footer>
+</div>

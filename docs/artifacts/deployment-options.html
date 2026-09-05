@@ -1,0 +1,281 @@
+<title>Deployment Options</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --bg:#EDF0EC; --surface:#F7F9F6; --ink:#1B2320; --ink-soft:#4B534E; --rule:#D8DCD5;
+    --active:#1F6E5C; --active-fill:#E4F1EC;
+    --pending:#83897F; --pending-fill:#F1F2EF;
+    --amber:#8A6A2A; --amber-fill:#F3ECDD;
+    --llm:#3B5B8C; --llm-fill:#E7ECF3;
+    --band-fill:#FBFCFA;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#131714; --surface:#1A201C; --ink:#E9ECE6; --ink-soft:#A9B0A5; --rule:#2C322D;
+      --active:#4FBE9C; --active-fill:#17332B;
+      --pending:#8B928A; --pending-fill:#20251F;
+      --amber:#D3AC5C; --amber-fill:#332B18;
+      --llm:#8FAAD6; --llm-fill:#1C2433;
+      --band-fill:#171C19;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#131714; --surface:#1A201C; --ink:#E9ECE6; --ink-soft:#A9B0A5; --rule:#2C322D;
+    --active:#4FBE9C; --active-fill:#17332B;
+    --pending:#8B928A; --pending-fill:#20251F;
+    --amber:#D3AC5C; --amber-fill:#332B18;
+    --llm:#8FAAD6; --llm-fill:#1C2433;
+    --band-fill:#171C19;
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--ink); font-family:'IBM Plex Sans', system-ui, sans-serif; -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1260px; margin:0 auto; padding:56px 28px 80px;}
+
+  .eyebrow{font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:var(--active); font-weight:600; margin:0 0 10px;}
+  h1{font-size:clamp(28px,4vw,38px); font-weight:600; letter-spacing:-.01em; margin:0 0 14px; text-wrap:balance;}
+  .lede{font-size:16px; line-height:1.65; color:var(--ink-soft); max-width:720px; margin:0 0 20px;}
+
+  .note-box{background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:14px 18px; font-size:13px; line-height:1.6; color:var(--ink-soft); margin-bottom:32px;}
+  .note-box.fixed{border-color:var(--llm); background:var(--llm-fill);}
+
+  .legend{display:flex; flex-wrap:wrap; gap:20px; align-items:center; padding:14px 18px; border:1px solid var(--rule); border-radius:8px; background:var(--surface); margin-bottom:34px;}
+  .legend-item{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--ink-soft);}
+  .tag-swatch{display:inline-block; width:14px; height:14px; border-radius:4px; flex:none;}
+
+  figure{margin:0 0 40px;}
+  .diagram-frame{border:1px solid var(--rule); border-radius:10px; background:var(--surface); padding:18px; overflow-x:auto;}
+  .diagram-frame svg{display:block; max-width:100%; height:auto; min-width:1200px;}
+  figcaption{font-size:12.5px; color:var(--ink-soft); margin-top:12px; line-height:1.5;}
+
+  .cell rect{stroke-width:1.4;}
+  .cell.plain rect{fill:var(--surface); stroke:var(--rule);}
+  .cell.new rect{fill:var(--llm-fill);}
+  .cell-title{font-family:'IBM Plex Mono', monospace; font-size:12px; font-weight:600; fill:var(--ink);}
+  .cell-line{font-family:'IBM Plex Sans', sans-serif; font-size:11px; fill:var(--ink-soft);}
+  .col-header{font-family:'IBM Plex Mono', monospace; font-size:13px; font-weight:600; text-anchor:middle;}
+  .row-label{font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.06em; text-transform:uppercase; fill:var(--ink);}
+  .tag-chip{font-family:'IBM Plex Mono', monospace; font-size:9.5px; letter-spacing:.03em;}
+  .tag-chip.stat rect{fill:var(--active-fill); stroke:var(--active);} .tag-chip.stat text{fill:var(--active);}
+  .tag-chip.ml rect{fill:var(--amber-fill); stroke:var(--amber);} .tag-chip.ml text{fill:var(--amber);}
+  .tag-chip.llm rect{fill:var(--llm-fill); stroke:var(--llm);} .tag-chip.llm text{fill:var(--llm);}
+  .verdict-a{fill:var(--pending-fill); stroke:var(--pending); stroke-dasharray:5 4;}
+  .verdict-b{fill:var(--active-fill); stroke:var(--active);}
+  .verdict-c{fill:var(--amber-fill); stroke:var(--amber); stroke-dasharray:5 4;}
+
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  caption{text-align:left; font-size:12.5px; color:var(--ink-soft); margin-bottom:10px;}
+  th{text-align:left; font-family:'IBM Plex Mono', monospace; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-soft); padding:0 12px 9px 0; border-bottom:1px solid var(--rule); font-weight:500;}
+  td{padding:10px 12px 10px 0; border-bottom:1px solid var(--rule); vertical-align:top; line-height:1.5;}
+
+  footer{margin-top:36px; font-size:12px; color:var(--ink-soft); line-height:1.6; border-top:1px solid var(--rule); padding-top:20px;}
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">DataInsights — solution architecture options for the board</p>
+  <h1>Three deployment paths, compared</h1>
+  <p class="lede">
+    Same six-stage pipeline, three places it could run. Read this as a
+    decision matrix, not three separate designs — the middle column is the
+    only one of the three that's an independent production architecture;
+    the third is explained rather than drawn as an equal alternative, for
+    reasons stated plainly below.
+  </p>
+
+  <div class="note-box fixed">
+    <strong>Revised:</strong> the previous version of this diagram only
+    showed internal transaction/client data as "source" — it was missing
+    where external market/industry/political signals (the exogenous event
+    category — ECB, TED, Eurostat, EU sanctions, EUR-Lex, GDELT, EM-DAT)
+    actually get retrieved from. Added as its own row below, for all three
+    columns, verified against current Snowflake capability before drawing it.
+  </div>
+
+  <div class="note-box">
+    <strong>On format:</strong> this page is a rendered diagram, not a flat
+    image file — there is no tool available here that emits a literal PNG/JPG.
+    It displays and reads exactly like one; use your browser's screenshot or
+    print-to-PDF if you need a static image file for a slide deck.
+  </div>
+
+  <div class="legend">
+    <span class="legend-item"><span class="tag-swatch" style="background:var(--active-fill); border:1.4px solid var(--active)"></span>Statistical (built, proven)</span>
+    <span class="legend-item"><span class="tag-swatch" style="background:var(--amber-fill); border:1.4px solid var(--amber)"></span>Machine learning (future, conditional)</span>
+    <span class="legend-item"><span class="tag-swatch" style="background:var(--llm-fill); border:1.4px solid var(--llm)"></span>LLM</span>
+  </div>
+
+  <figure>
+    <div class="diagram-frame">
+      <svg viewBox="0 0 1680 900" role="img" aria-label="Comparison matrix of three deployment options -- MacBook local, Snowflake with Glue Iceberg integration, and Kiro as a development client -- across six pipeline stages: internal source, external events, detection, ranking, narrative and judge, and delivery. Each cell names the actual technology and is tagged statistical, machine learning, or LLM where applicable. A verdict row states MacBook is prototyping-only, Snowflake is the recommended production target, and Kiro is not an independent architecture.">
+
+        <!-- column headers -->
+        <text x="410" y="55" class="col-header" fill="var(--ink)">A · MacBook (local)</text>
+        <text x="900" y="55" class="col-header" fill="var(--active)">B · Snowflake + Glue/Iceberg</text>
+        <text x="1390" y="55" class="col-header" fill="var(--ink)">C · Kiro (dev client)</text>
+        <line x1="20" y1="70" x2="1660" y2="70" stroke="var(--rule)" stroke-width="1"/>
+
+        <!-- Row 1: INTERNAL SOURCE -->
+        <text x="20" y="100" class="row-label">Internal source</text>
+        <g class="cell plain"><rect x="170" y="84" width="480" height="80" rx="7"/>
+          <text x="190" y="108" class="cell-title">Local CSV + DuckDB</text>
+          <text x="190" y="126" class="cell-line">OfflineLocalSource — single machine, single writer</text></g>
+        <g class="cell plain"><rect x="660" y="84" width="480" height="80" rx="7" stroke="var(--active)"/>
+          <text x="680" y="108" class="cell-title">Snowflake native tables</text>
+          <text x="680" y="126" class="cell-line">+ Iceberg via AWS Glue Catalog Integration —</text>
+          <text x="680" y="141" class="cell-line">verified capability, no physical data movement</text></g>
+        <g class="cell plain"><rect x="1150" y="84" width="480" height="80" rx="7"/>
+          <text x="1170" y="108" class="cell-title">Same as column A or B</text>
+          <text x="1170" y="126" class="cell-line">Kiro edits/runs code against a source —</text>
+          <text x="1170" y="141" class="cell-line">it is not itself a data host</text></g>
+
+        <!-- Row 2: EXTERNAL EVENTS (new) -->
+        <text x="20" y="200" class="row-label">External</text>
+        <text x="20" y="215" class="row-label">events</text>
+
+        <g class="cell new"><rect x="170" y="184" width="480" height="120" rx="7" stroke="var(--llm)"/>
+          <text x="190" y="208" class="cell-title">Simulated today</text>
+          <text x="190" y="226" class="cell-line">(external_events/simulate_external_events.py)</text>
+          <text x="190" y="241" class="cell-line">Real path: direct Python calls (requests) to ECB /</text>
+          <text x="190" y="256" class="cell-line">TED / Eurostat / EU-sanctions / EUR-Lex APIs</text>
+          <text x="190" y="271" class="cell-line">GDELT/news needs local LLM extraction (Ollama) first</text></g>
+        <g class="cell new"><rect x="660" y="184" width="480" height="120" rx="7" stroke="var(--active)"/>
+          <text x="680" y="208" class="cell-title">External Access Integration (verified)</text>
+          <text x="680" y="226" class="cell-line">Network Rule (egress) + Secret → Snowpark/Task</text>
+          <text x="680" y="241" class="cell-line">calls ECB/TED/Eurostat/EU-sanctions/EUR-Lex on a</text>
+          <text x="680" y="256" class="cell-line">schedule, lands rows into native/Iceberg tables</text>
+          <text x="680" y="271" class="cell-line">GDELT/news extraction: Cortex (paid) or ext. fn (unpaid)</text></g>
+        <g class="cell new"><rect x="1150" y="184" width="480" height="120" rx="7" stroke="var(--llm)"/>
+          <text x="1170" y="208" class="cell-title">Same as column A or B</text>
+          <text x="1170" y="226" class="cell-line">Kiro can help write/test the retrieval code —</text>
+          <text x="1170" y="241" class="cell-line">it doesn't host the scheduled pull itself</text></g>
+
+        <!-- Row 3: DETECTION -->
+        <text x="20" y="340" class="row-label">Detection</text>
+        <g class="tag-chip stat"><rect x="20" y="348" width="120" height="18" rx="9"/><text x="80" y="361" text-anchor="middle">STATISTICAL</text></g>
+
+        <g class="cell plain"><rect x="170" y="324" width="480" height="80" rx="7"/>
+          <text x="190" y="348" class="cell-title">pandas</text>
+          <text x="190" y="366" class="cell-line">rolling Median Absolute Deviation (MAD)</text>
+          <text x="190" y="381" class="cell-line">baseline — no ML, no LLM</text></g>
+        <g class="cell plain"><rect x="660" y="324" width="480" height="80" rx="7" stroke="var(--active)"/>
+          <text x="680" y="348" class="cell-title">Snowpark Python / SQL window fns</text>
+          <text x="680" y="366" class="cell-line">same MAD logic; MATCH_RECOGNIZE for</text>
+          <text x="680" y="381" class="cell-line">sequence-pattern detectors (dormancy, stress windows)</text></g>
+        <g class="cell plain"><rect x="1150" y="324" width="480" height="80" rx="7"/>
+          <text x="1170" y="348" class="cell-title">Same code as A or B</text>
+          <text x="1170" y="366" class="cell-line">authored/tested via Kiro's session,</text>
+          <text x="1170" y="381" class="cell-line">executes in A or B, not inside Kiro</text></g>
+
+        <!-- Row 4: RANKING -->
+        <text x="20" y="440" class="row-label">Ranking</text>
+        <g class="tag-chip stat"><rect x="20" y="448" width="120" height="18" rx="9"/><text x="80" y="461" text-anchor="middle">RULE (today)</text></g>
+        <g class="tag-chip ml"><rect x="20" y="470" width="120" height="18" rx="9"/><text x="80" y="483" text-anchor="middle">ML (later)</text></g>
+
+        <g class="cell plain"><rect x="170" y="424" width="480" height="80" rx="7"/>
+          <text x="190" y="448" class="cell-title">Explicit magnitude + recency formula</text>
+          <text x="190" y="466" class="cell-line">Future: XGBoost or RandomForest propensity</text>
+          <text x="190" y="481" class="cell-line">model, scikit-learn, trained locally</text></g>
+        <g class="cell plain"><rect x="660" y="424" width="480" height="80" rx="7" stroke="var(--active)"/>
+          <text x="680" y="448" class="cell-title">Same explicit formula, in Snowpark</text>
+          <text x="680" y="466" class="cell-line">Future: Snowpark ML — XGBoost/RandomForest</text>
+          <text x="680" y="481" class="cell-line">trained inside Snowflake, data never leaves</text></g>
+        <g class="cell plain"><rect x="1150" y="424" width="480" height="80" rx="7"/>
+          <text x="1170" y="448" class="cell-title">Same as column A or B</text>
+          <text x="1170" y="466" class="cell-line">no ranking logic runs inside Kiro itself</text></g>
+
+        <!-- Row 5: NARRATIVE & JUDGE -->
+        <text x="20" y="540" class="row-label">Narrative</text>
+        <text x="20" y="555" class="row-label">&amp; judge</text>
+        <g class="tag-chip llm"><rect x="20" y="568" width="120" height="18" rx="9"/><text x="80" y="581" text-anchor="middle">LLM</text></g>
+
+        <g class="cell plain"><rect x="170" y="524" width="480" height="100" rx="7"/>
+          <text x="190" y="548" class="cell-title">Local Ollama</text>
+          <text x="190" y="566" class="cell-line">qwen2.5:7b narrator + llama3.1:8b judge</text>
+          <text x="190" y="581" class="cell-line">(different model) — zero cost, no SLA</text></g>
+        <g class="cell plain"><rect x="660" y="524" width="480" height="100" rx="7" stroke="var(--active)"/>
+          <text x="680" y="548" class="cell-title">Two sub-options</text>
+          <text x="680" y="566" class="cell-line">(i) Snowflake Cortex COMPLETE — native, PAID,</text>
+          <text x="680" y="581" class="cell-line">needs authorization</text>
+          <text x="680" y="596" class="cell-line">(ii) External Function → self-hosted open-weight</text>
+          <text x="680" y="611" class="cell-line">model — unpaid, more engineering</text></g>
+        <g class="cell plain"><rect x="1150" y="524" width="480" height="100" rx="7"/>
+          <text x="1170" y="548" class="cell-title">Same as column A</text>
+          <text x="1170" y="566" class="cell-line">Kiro does not run inference itself,</text>
+          <text x="1170" y="581" class="cell-line">only orchestrates the call to it</text></g>
+
+        <!-- Row 6: DELIVERY -->
+        <text x="20" y="660" class="row-label">Delivery</text>
+
+        <g class="cell plain"><rect x="170" y="644" width="480" height="80" rx="7"/>
+          <text x="190" y="668" class="cell-title">Flat CSV / markdown files</text>
+          <text x="190" y="686" class="cell-line">local disk only, no persistence of RM action</text></g>
+        <g class="cell plain"><rect x="660" y="644" width="480" height="80" rx="7" stroke="var(--active)"/>
+          <text x="680" y="668" class="cell-title">Streamlit-in-Snowflake dashboard</text>
+          <text x="680" y="686" class="cell-line">+ Snowflake Tasks for scheduling — native, no separate host</text></g>
+        <g class="cell plain"><rect x="1150" y="644" width="480" height="80" rx="7"/>
+          <text x="1170" y="668" class="cell-title">Same as column A or B</text>
+          <text x="1170" y="686" class="cell-line">Kiro is not a hosting target for a dashboard</text></g>
+
+        <!-- Verdict row -->
+        <line x1="20" y1="744" x2="1660" y2="744" stroke="var(--rule)" stroke-width="1"/>
+        <text x="20" y="770" class="row-label">Verdict</text>
+
+        <rect class="verdict-a" x="170" y="754" width="480" height="90" rx="7"/>
+        <text x="190" y="780" class="cell-title" fill="var(--pending)">Prototyping only</text>
+        <text x="190" y="800" class="cell-line">Proven today — everything in this project runs here,</text>
+        <text x="190" y="815" class="cell-line">external events fully simulated, not yet live.</text>
+
+        <rect class="verdict-b" x="660" y="754" width="480" height="90" rx="7"/>
+        <text x="680" y="780" class="cell-title" fill="var(--active)">Recommended production target</text>
+        <text x="680" y="800" class="cell-line">Real scheduling, RBAC, dashboard, Glue/Iceberg, and live</text>
+        <text x="680" y="815" class="cell-line">external retrieval, natively — no separate hosting needed.</text>
+
+        <rect class="verdict-c" x="1150" y="754" width="480" height="90" rx="7"/>
+        <text x="1170" y="780" class="cell-title" fill="var(--amber)">Not an independent architecture</text>
+        <text x="1170" y="800" class="cell-line">Kiro is a development client. It can connect to and drive</text>
+        <text x="1170" y="815" class="cell-line">A or B — it cannot itself durably host either.</text>
+
+      </svg>
+    </div>
+    <figcaption>
+      The external-events row is the one that changes most between columns:
+      on a MacBook it's simulated data today, with a real path being nothing
+      more than plain HTTP calls; in Snowflake it's a first-class, scheduled,
+      governed pull via External Access Integration — the more production-
+      credible of the two for anything that needs to run unattended.
+    </figcaption>
+  </figure>
+
+  <section>
+    <h2 style="font-size:19px; margin:0 0 6px;">Why "hosted on Kiro" isn't a real third option</h2>
+    <p style="font-size:13.5px; color:var(--ink-soft); line-height:1.65; max-width:760px; margin:0 0 20px;">
+      Kiro (like Claude Code, like any AI coding assistant) is a development-time
+      tool: it has no persistent server process, no built-in scheduler, no
+      uptime guarantee, and its session ends when you close it — the exact
+      same limitation this project already flagged for "a sleeping Mac can't
+      provide 24/7 monitoring." Connectivity from Kiro to Snowflake means Kiro
+      is a convenient <em>client</em> for building and testing against
+      Snowflake — the production workload still needs to actually execute
+      inside Snowflake (Option B) or a real cloud runtime, not inside any
+      coding agent's own session. Presenting it as a co-equal third
+      architecture to a board would overstate what it can do.
+    </p>
+  </section>
+
+  <table>
+    <caption>At a glance</caption>
+    <thead><tr><th>Option</th><th>What it's actually good for</th><th>What it can't do</th></tr></thead>
+    <tbody>
+      <tr><td><strong>A · MacBook</strong></td><td>Fast iteration, zero cost, full data privacy, exactly what built and verified everything in this project so far</td><td>No durability, no concurrency, no real security perimeter, no scheduling, no live external-event retrieval</td></tr>
+      <tr><td><strong>B · Snowflake + Glue/Iceberg</strong></td><td>Real scheduling (Tasks), real CDC-based incremental detection (Streams), real RBAC, a native dashboard (Streamlit-in-Snowflake), reads Glue-cataloged Iceberg data with no data movement, and live external-event retrieval via External Access Integration</td><td>LLM narrative either needs paid Cortex authorization or the engineering effort of an external self-hosted model call; GDELT/news extraction is nontrivial regardless of platform</td></tr>
+      <tr><td><strong>C · Kiro</strong></td><td>A better development experience for building against A or B</td><td>Cannot host, schedule, or durably run anything itself</td></tr>
+    </tbody>
+  </table>
+
+  <footer>
+    Companion artifacts: "Pipeline Blueprint" (what runs today), "Production
+    Blueprint" (the production gap in more stage-by-stage detail), and
+    "Simulation Results" (real numbers from a live run).
+  </footer>
+</div>

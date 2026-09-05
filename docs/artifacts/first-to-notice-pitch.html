@@ -1,0 +1,295 @@
+<title>First to Notice</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --bg:#F4F2ED; --surface:#FFFFFF; --ink:#14202B; --ink-soft:#4A5568; --rule:#E1DED4;
+    --accent:#A6772C; --accent-fill:#F2E9D8;
+    --good:#1F6E5C; --good-fill:#E4F1EC;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#12161C; --surface:#191F27; --ink:#EDEAE1; --ink-soft:#A9AFB8; --rule:#2A313B;
+      --accent:#D8B15C; --accent-fill:#2C2417;
+      --good:#4FBE9C; --good-fill:#173229;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#12161C; --surface:#191F27; --ink:#EDEAE1; --ink-soft:#A9AFB8; --rule:#2A313B;
+    --accent:#D8B15C; --accent-fill:#2C2417;
+    --good:#4FBE9C; --good-fill:#173229;
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--ink); font-family:'IBM Plex Sans', system-ui, sans-serif; -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:920px; margin:0 auto; padding:0 28px 100px;}
+
+  /* ---------- hero ---------- */
+  .hero{padding:88px 0 56px; text-align:left;}
+  .eyebrow{font-family:'IBM Plex Mono', monospace; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); font-weight:600; margin:0 0 22px;}
+  h1{
+    font-family:'Fraunces', serif; font-weight:600; font-size:clamp(40px,6.4vw,68px);
+    line-height:1.04; letter-spacing:-.01em; margin:0 0 26px; text-wrap:balance;
+    font-variation-settings:'opsz' 90;
+  }
+  h1 em{font-style:italic; color:var(--accent);}
+  .hero-sub{font-size:19px; line-height:1.6; color:var(--ink-soft); max-width:600px; margin:0;}
+
+  /* ---------- sections ---------- */
+  section{margin:64px 0;}
+  .kicker{font-family:'IBM Plex Mono', monospace; font-size:11.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--accent); font-weight:600; margin:0 0 10px;}
+  h2{font-family:'Fraunces', serif; font-weight:500; font-size:clamp(26px,3.2vw,32px); letter-spacing:-.005em; margin:0 0 18px; text-wrap:balance; font-variation-settings:'opsz' 40;}
+  p.body{font-size:16px; line-height:1.7; color:var(--ink-soft); max-width:640px; margin:0 0 16px;}
+  p.body strong{color:var(--ink); font-weight:600;}
+
+  /* problem callout */
+  .problem-quote{
+    border-left:3px solid var(--accent); padding:4px 0 4px 26px; margin:28px 0;
+    font-family:'Fraunces', serif; font-style:italic; font-size:22px; line-height:1.5;
+    color:var(--ink); font-variation-settings:'opsz' 24;
+  }
+
+  .pain-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-top:28px;}
+  .pain-card{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:20px;}
+  .pain-num{font-family:'Fraunces', serif; font-size:34px; color:var(--accent); line-height:1; margin-bottom:8px; font-variation-settings:'opsz' 30;}
+  .pain-label{font-size:13.5px; line-height:1.55; color:var(--ink-soft);}
+
+  /* inputs list */
+  .input-list{display:flex; flex-direction:column; gap:2px; margin-top:24px;}
+  .input-row{display:flex; gap:20px; align-items:baseline; padding:16px 0; border-bottom:1px solid var(--rule);}
+  .input-row:first-child{border-top:1px solid var(--rule);}
+  .input-tag{
+    font-family:'IBM Plex Mono', monospace; font-size:10.5px; letter-spacing:.04em; text-transform:uppercase;
+    color:var(--good); background:var(--good-fill); border:1px solid var(--good); border-radius:20px;
+    padding:3px 10px; flex:none; width:118px; text-align:center;
+  }
+  .input-text{font-size:15px; line-height:1.55; color:var(--ink);}
+  .input-text span{color:var(--ink-soft); font-size:13.5px; display:block; margin-top:2px;}
+
+  /* the RM card mockup */
+  .rm-mock-wrap{margin-top:28px;}
+  .rm-mock{
+    background:var(--surface); border:1px solid var(--rule); border-radius:14px; padding:26px 28px;
+    box-shadow:0 1px 2px rgba(20,32,43,.04), 0 8px 24px rgba(20,32,43,.06);
+  }
+  .rm-mock-top{display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px; flex-wrap:wrap; gap:10px;}
+  .rm-mock-cat{
+    font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.03em; color:var(--good);
+    background:var(--good-fill); border:1px solid var(--good); border-radius:20px; padding:4px 12px;
+  }
+  .rm-mock-score{font-family:'IBM Plex Mono', monospace; font-size:12.5px; color:var(--ink-soft);}
+  .rm-mock-client{font-family:'Fraunces', serif; font-size:22px; font-weight:600; margin:0 0 4px; font-variation-settings:'opsz' 22;}
+  .rm-mock-meta{font-size:13px; color:var(--ink-soft); margin-bottom:18px;}
+  .rm-mock-field{margin-bottom:14px;}
+  .rm-mock-field-label{font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-soft); margin-bottom:4px;}
+  .rm-mock-field-value{font-size:14.5px; line-height:1.6; color:var(--ink);}
+  .rm-mock-action{
+    background:var(--accent-fill); border:1px solid var(--accent); border-radius:8px; padding:12px 16px;
+    font-size:14.5px; color:var(--ink); margin-top:6px;
+  }
+  .rm-mock-action strong{color:var(--accent);}
+
+  /* benefits */
+  .benefit-grid{display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:28px;}
+  .benefit-card{padding:24px; border-radius:12px; background:var(--surface); border:1px solid var(--rule);}
+  .benefit-card h3{font-family:'Fraunces', serif; font-size:19px; font-weight:600; margin:0 0 10px; font-variation-settings:'opsz' 20;}
+  .benefit-card p{font-size:14px; line-height:1.65; color:var(--ink-soft); margin:0;}
+  .benefit-icon{font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); margin-bottom:10px; display:block;}
+
+  /* proof stats */
+  .proof-band{
+    background:var(--ink); color:var(--bg); border-radius:16px; padding:40px 36px; margin-top:28px;
+  }
+  .proof-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:24px;}
+  .proof-num{font-family:'IBM Plex Mono', monospace; font-size:30px; font-weight:600; color:var(--accent); font-variant-numeric:tabular-nums;}
+  .proof-label{font-size:12px; line-height:1.5; opacity:.75; margin-top:6px;}
+  .proof-note{font-size:13px; opacity:.7; margin-top:24px; line-height:1.6; border-top:1px solid rgba(244,242,237,.15); padding-top:18px;}
+
+  /* close */
+  .close-band{
+    text-align:left; padding:56px 0 0; border-top:1px solid var(--rule); margin-top:70px;
+  }
+  .close-band h2{max-width:560px;}
+  .cta-row{display:flex; gap:14px; margin-top:24px; flex-wrap:wrap;}
+  .cta{
+    font-family:'IBM Plex Mono', monospace; font-size:13px; padding:12px 22px; border-radius:8px;
+    border:1px solid var(--rule); color:var(--ink-soft);
+  }
+  .cta.primary{background:var(--ink); color:var(--bg); border-color:var(--ink); font-weight:500;}
+
+  footer{margin-top:60px; font-size:12px; color:var(--ink-soft); line-height:1.7; border-top:1px solid var(--rule); padding-top:24px;}
+
+  @media (max-width:640px){
+    .pain-grid, .benefit-grid, .proof-grid{grid-template-columns:1fr;}
+    .hero{padding:56px 0 40px;}
+  }
+</style>
+
+<div class="wrap">
+
+  <div class="hero">
+    <p class="eyebrow">Next Best Action for Commercial &amp; Institutional Banking</p>
+    <h1>Be the bank that calls <em>before</em> the client asks.</h1>
+    <p class="hero-sub">
+      A working system that reads a client's own transaction behavior
+      alongside what's happening in their market — and hands the
+      Relationship Manager one ranked, evidence-backed reason to pick up
+      the phone, before a competitor does.
+    </p>
+  </div>
+
+  <section>
+    <p class="kicker">The problem</p>
+    <h2>Every bank has the data. Almost none of it gets acted on in time.</h2>
+    <p class="body">
+      A Relationship Manager covers dozens, sometimes hundreds, of
+      commercial and institutional clients. The signals that matter — a
+      client just received an unusually large payment, a public tender
+      just opened up their sector, a rate move just made their treasury
+      balance worth a conversation — already exist, scattered across
+      transaction systems and public information nobody has time to watch
+      client-by-client.
+    </p>
+    <p class="problem-quote">"By the time we noticed, the client had already gone to someone else."</p>
+    <p class="body">
+      Outreach today is largely calendar-driven, not event-driven. The
+      cost isn't visible on any single day — it shows up as the renewal
+      that should have been a cross-sell, the treasury surplus sitting
+      idle for months, the client who felt like a number instead of a
+      relationship.
+    </p>
+    <div class="pain-grid">
+      <div class="pain-card"><div class="pain-num">Missed</div><div class="pain-label">Opportunities buried in transaction noise, never surfaced to the RM who could act on them</div></div>
+      <div class="pain-card"><div class="pain-num">Late</div><div class="pain-label">Outreach happens on a quarterly cadence, not the day something actually changes for the client</div></div>
+      <div class="pain-card"><div class="pain-num">Generic</div><div class="pain-label">Without a reason grounded in evidence, a call reads as a sales pitch, not a relationship</div></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">What goes in</p>
+    <h2>Nothing new to collect. Nothing expensive to license.</h2>
+    <p class="body">Two categories of signal, both already available:</p>
+    <div class="input-list">
+      <div class="input-row">
+        <span class="input-tag">ALREADY OWNED</span>
+        <span class="input-text">Client transaction &amp; account history<span>Payment amounts, timing, currency, account balances — data the bank already holds</span></span>
+      </div>
+      <div class="input-row">
+        <span class="input-tag">ALREADY OWNED</span>
+        <span class="input-text">Client profile<span>Sector, country, segment — already captured at onboarding/KYB</span></span>
+      </div>
+      <div class="input-row">
+        <span class="input-tag">PUBLIC &amp; FREE</span>
+        <span class="input-text">Market &amp; industry signals<span>Central bank rate decisions, public tender awards, energy price indices, sanctions updates, EU regulation, geopolitical and disaster event feeds</span></span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">What comes out</p>
+    <h2>One ranked recommendation. Plain language. Full evidence attached.</h2>
+    <p class="body">
+      Not a dashboard full of numbers — a single card per opportunity, the
+      way an RM would actually want to receive it. Every claim on the card
+      traces back to a specific, checkable fact. Nothing is invented, and
+      the system never contacts the client itself — it hands the decision
+      to the person who should be making it.
+    </p>
+    <div class="rm-mock-wrap">
+      <div class="rm-mock">
+        <div class="rm-mock-top">
+          <span class="rm-mock-cat">TREASURY OPPORTUNITY</span>
+          <span class="rm-mock-score">priority score 0.97 of 1.00</span>
+        </div>
+        <div class="rm-mock-client">Haering — Mid-Corporate</div>
+        <div class="rm-mock-meta">Professional &amp; Business Services · Netherlands · RM016</div>
+
+        <div class="rm-mock-field">
+          <div class="rm-mock-field-label">What happened</div>
+          <div class="rm-mock-field-value">A payment of €658,830 landed in this client's account on 5 Nov — roughly 25× their typical inflow, based on 36 prior transactions.</div>
+        </div>
+        <div class="rm-mock-field">
+          <div class="rm-mock-field-label">Why it matters, cautiously</div>
+          <div class="rm-mock-field-value">A statistical size anomaly relative to this client's own history — not, on its own, proof of any specific business event.</div>
+        </div>
+        <div class="rm-mock-action">
+          <strong>Suggested next step:</strong> RM to review the transaction and recent account activity before any client conversation.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">Why the bank should care</p>
+    <h2>The same signal that grows revenue is the one that protects it.</h2>
+    <div class="benefit-grid">
+      <div class="benefit-card">
+        <span class="benefit-icon">Profit</span>
+        <h3>Earlier, better-targeted conversations</h3>
+        <p>RM time goes to the clients most likely to need a product right now — financing, hedging, treasury — instead of being spread evenly across a book where most clients need nothing this week.</p>
+      </div>
+      <div class="benefit-card">
+        <span class="benefit-icon">Trust</span>
+        <h3>The bank notices first</h3>
+        <p>A client who's called about something relevant before they raised it themselves experiences the relationship differently than one who's called on a quarterly script. That's retention, not just conversion.</p>
+      </div>
+      <div class="benefit-card">
+        <span class="benefit-icon">Protection</span>
+        <h3>The same system flags risk, not just opportunity</h3>
+        <p>Sanctions exposure, credit stress, counterparty concentration surface through the identical mechanism — early awareness protects the bank's book, not only grows it.</p>
+      </div>
+      <div class="benefit-card">
+        <span class="benefit-icon">Discipline</span>
+        <h3>Built to be governed, not retrofitted</h3>
+        <p>Every recommendation is traceable to its evidence. A human reviews before anything reaches a client. The system that measures results is kept separate from the system that produces them, from day one — not bolted on after an audit finds a problem.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">Where this stands today</p>
+    <h2>Not a slide deck. A system that already runs.</h2>
+    <p class="body">
+      Built and verified end to end against a realistic 3-year, 300-client
+      synthetic dataset — modeled on real banking data conventions, not
+      invented from scratch. Every number below came out of an actual run,
+      not a projection.
+    </p>
+    <div class="proof-band">
+      <div class="proof-grid">
+        <div><div class="proof-num">16/16</div><div class="proof-label">automated tests passing</div></div>
+        <div><div class="proof-num">300/300</div><div class="proof-label">clients covered with a ranked recommendation</div></div>
+        <div><div class="proof-num">2,797</div><div class="proof-label">recommendations generated in one run</div></div>
+        <div><div class="proof-num">6</div><div class="proof-label">distinct commercial categories, auto-tagged</div></div>
+      </div>
+      <p class="proof-note">
+        This is a proof of concept on synthetic data — it demonstrates that the
+        mechanism works, not a validated revenue figure. The honest next step is a
+        pilot against real (governed, sandboxed) data to measure actual conversion
+        and retention impact, which no synthetic dataset can prove on its own.
+      </p>
+    </div>
+  </section>
+
+  <div class="close-band">
+    <p class="kicker">The ask</p>
+    <h2>Approve a scoped pilot — real data, sandboxed, one RM team.</h2>
+    <p class="body">
+      The architecture already runs on a single laptop for near-zero cost
+      today, and is designed to move onto governed infrastructure without a
+      rebuild when it's time to scale. The fastest way to know if this is
+      worth rolling out further is to let one team try it against real
+      accounts under real oversight, and measure what happens.
+    </p>
+    <div class="cta-row">
+      <span class="cta primary">Approve scoped pilot</span>
+      <span class="cta">Request architecture review</span>
+      <span class="cta">See the live demo</span>
+    </div>
+  </div>
+
+  <footer>
+    All figures on this page are from a synthetic proof-of-concept simulation. No real client, transaction, or financial outcome is represented anywhere in this document.
+  </footer>
+
+</div>

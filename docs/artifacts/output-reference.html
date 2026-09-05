@@ -1,0 +1,272 @@
+<title>Output Reference</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --bg:#EDF0EC; --surface:#F7F9F6; --ink:#1B2320; --ink-soft:#4B534E; --rule:#D8DCD5;
+    --active:#1F6E5C; --active-fill:#E4F1EC;
+    --pending:#83897F; --pending-fill:#F1F2EF;
+    --amber:#8A6A2A; --amber-fill:#F3ECDD;
+    --llm:#3B5B8C; --llm-fill:#E7ECF3;
+    --file-bg:#1B2320; --file-ink:#D7DCD3; --file-soft:#8A9188; --file-bar:#242C26;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#131714; --surface:#1A201C; --ink:#E9ECE6; --ink-soft:#A9B0A5; --rule:#2C322D;
+      --active:#4FBE9C; --active-fill:#17332B;
+      --pending:#8B928A; --pending-fill:#20251F;
+      --amber:#D3AC5C; --amber-fill:#332B18;
+      --llm:#8FAAD6; --llm-fill:#1C2433;
+      --file-bg:#0D110E; --file-ink:#D7DCD3; --file-soft:#77807A; --file-bar:#171C19;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#131714; --surface:#1A201C; --ink:#E9ECE6; --ink-soft:#A9B0A5; --rule:#2C322D;
+    --active:#4FBE9C; --active-fill:#17332B;
+    --pending:#8B928A; --pending-fill:#20251F;
+    --amber:#D3AC5C; --amber-fill:#332B18;
+    --llm:#8FAAD6; --llm-fill:#1C2433;
+    --file-bg:#0D110E; --file-ink:#D7DCD3; --file-soft:#77807A; --file-bar:#171C19;
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--ink); font-family:'IBM Plex Sans', system-ui, sans-serif; -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1180px; margin:0 auto; padding:48px 28px 80px;}
+
+  .eyebrow{font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-soft); font-weight:600; margin:0 0 8px;}
+  h1{font-size:clamp(24px,3.2vw,30px); font-weight:600; letter-spacing:-.005em; margin:0 0 10px;}
+  .lede{font-size:14.5px; line-height:1.6; color:var(--ink-soft); max-width:760px; margin:0 0 32px;}
+
+  h2{font-size:17px; font-weight:600; margin:0 0 6px;}
+  .section-note{font-size:13px; color:var(--ink-soft); line-height:1.55; max-width:760px; margin:0 0 16px;}
+  section{margin-bottom:44px;}
+
+  /* technical approach reference table */
+  .tech-table{width:100%; border-collapse:collapse; font-size:13px; margin-bottom:8px;}
+  .tech-table th{text-align:left; font-family:'IBM Plex Mono', monospace; font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-soft); padding:0 14px 8px 0; border-bottom:1px solid var(--rule); font-weight:500;}
+  .tech-table td{padding:10px 14px 10px 0; border-bottom:1px solid var(--rule); vertical-align:top; line-height:1.5;}
+  .tech-table td.mono{font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--ink);}
+  .tag{display:inline-block; font-family:'IBM Plex Mono', monospace; font-size:9.5px; padding:2px 8px; border-radius:20px; white-space:nowrap;}
+  .tag.stat{color:var(--active); background:var(--active-fill); border:1px solid var(--active);}
+  .tag.rule{color:var(--pending); background:var(--pending-fill); border:1px solid var(--pending);}
+  .tag.llm{color:var(--llm); background:var(--llm-fill); border:1px solid var(--llm);}
+
+  /* file viewer */
+  .file-viewer{border-radius:8px; overflow:hidden; border:1px solid var(--rule); margin-bottom:10px;}
+  .file-bar{background:var(--file-bar); color:var(--file-soft); font-family:'IBM Plex Mono', monospace; font-size:11.5px; padding:9px 14px; display:flex; justify-content:space-between; gap:10px;}
+  .file-bar .path{color:var(--file-ink);}
+  .file-body{background:var(--file-bg); color:var(--file-ink); font-family:'IBM Plex Mono', monospace; font-size:11.5px; line-height:1.65; padding:16px 18px; overflow-x:auto; white-space:pre;}
+  .file-body .dim{color:var(--file-soft);}
+  .file-caption{font-size:12px; color:var(--ink-soft); margin:8px 0 0; line-height:1.5;}
+
+  /* parsed table */
+  .parsed-table{width:100%; border-collapse:collapse; font-size:12.5px; margin-top:18px;}
+  .parsed-table th{text-align:left; font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-soft); padding:0 10px 8px 0; border-bottom:1px solid var(--rule); font-weight:500;}
+  .parsed-table td{padding:9px 10px 9px 0; border-bottom:1px solid var(--rule); vertical-align:top;}
+  .parsed-table td.mono{font-family:'IBM Plex Mono', monospace; font-size:11.5px; color:var(--ink-soft);}
+  .cat-pill{font-family:'IBM Plex Mono', monospace; font-size:9.5px; padding:2px 7px; border-radius:20px; background:var(--active-fill); color:var(--active); border:1px solid var(--active); white-space:nowrap;}
+
+  /* category reference */
+  .cat-grid{display:flex; flex-direction:column; gap:1px; background:var(--rule); border:1px solid var(--rule); border-radius:8px; overflow:hidden;}
+  .cat-row{display:grid; grid-template-columns:180px 1fr 200px 70px; gap:0; background:var(--surface);}
+  .cat-row.header{background:var(--bg);}
+  .cat-cell{padding:14px 16px; font-size:12.5px; line-height:1.55;}
+  .cat-cell.label{font-family:'IBM Plex Mono', monospace; font-size:10.5px; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-soft); font-weight:500;}
+  .cat-cell.name{font-family:'IBM Plex Mono', monospace; font-weight:600;}
+  .cat-cell.count{font-family:'IBM Plex Mono', monospace; text-align:right; font-variant-numeric:tabular-nums; color:var(--ink-soft);}
+  .cat-cell .mech{color:var(--ink-soft); font-size:11.5px; display:block; margin-top:3px;}
+
+  footer{margin-top:36px; font-size:12px; color:var(--ink-soft); line-height:1.6; border-top:1px solid var(--rule); padding-top:20px;}
+
+  @media (max-width:760px){
+    .cat-row{grid-template-columns:1fr; }
+    .cat-cell.count{text-align:left;}
+  }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">DataInsights — output reference, generated 2026-09-05</p>
+  <h1>What the pipeline actually writes to disk</h1>
+  <p class="lede">
+    Raw file snapshots, the six output categories with their exact
+    definitions, and the technical approach behind each stage. No
+    projections — every snapshot below is copied directly from an actual
+    run's output files.
+  </p>
+
+  <section>
+    <h2>Technical approach, by stage</h2>
+    <p class="section-note">One row per pipeline stage: what technique class is used, and the specific method.</p>
+    <table class="tech-table">
+      <thead><tr><th>Stage</th><th>Technique</th><th>Method</th></tr></thead>
+      <tbody>
+        <tr><td>Input contract</td><td><span class="tag rule">SCHEMA</span></td><td class="mono">Typed column contract (config/entities.yaml) — grain, required columns, currency/time semantics enforced before any row reaches detection logic</td></tr>
+        <tr><td>Transaction detection</td><td><span class="tag stat">STATISTICAL</span></td><td class="mono">Rolling Median Absolute Deviation (MAD) vs. each account's own trailing history — flags a payment &gt; 6 MAD-multiples above baseline, min. 15 prior transactions</td></tr>
+        <tr><td>External event matching</td><td><span class="tag rule">RULE-BASED</span></td><td class="mono">Deterministic join: event.affected_sector/country against client.sector/country, empty field = wildcard match</td></tr>
+        <tr><td>Ranking</td><td><span class="tag rule">DETERMINISTIC</span></td><td class="mono">Explicit weighted formula — magnitude component (MAD-multiples or severity/5) × 0.6-0.7 + recency decay (half-life 14-30 days) × 0.3-0.4</td></tr>
+        <tr><td>Category tagging</td><td><span class="tag rule">RULE-BASED</span></td><td class="mono">Static lookup per rule_version, or direction-conditional lookup per (event_type, direction) pair — no model involved</td></tr>
+        <tr><td>Narrative generation</td><td><span class="tag llm">LLM</span></td><td class="mono">Local Ollama, qwen2.5:7b, structured JSON-schema-constrained output, validated against the evidence packet before acceptance; deterministic template fallback on failure</td></tr>
+        <tr><td>Quality sampling</td><td><span class="tag llm">LLM</span></td><td class="mono">Local Ollama, llama3.1:8b (different model than the narrator) — samples a subset of accepted narratives, scores faithfulness/action-relevance/clarity 1-5</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Input — transaction record (excerpt)</h2>
+    <p class="section-note">One row of transactions.csv, the primary input to the endogenous detector. 303,000 rows total in the current dataset; only the fields the detector contract requires are shown.</p>
+    <div class="file-viewer">
+      <div class="file-bar"><span class="path">data_generator/output/transactions.csv</span><span class="dim">row 1 of 302,990</span></div>
+      <div class="file-body">transaction_id,account_id,client_id,booking_date,value_date,amount,currency,direction,category,channel
+<span class="dim">f38d88c2-3641-4058-97fe-d9ce5b88a39d,CL00288-A0,CL00288,2025-11-05,2025-11-06,658830.34,EUR,credit,contract_payment,SEPA_CREDIT_TRANSFER</span></div>
+    </div>
+    <p class="file-caption">This single row is the one that produced the TREASURY_OPPORTUNITY example below — the amount and date shown here appear verbatim in every downstream output.</p>
+  </section>
+
+  <section>
+    <h2>Input — external event record (excerpt)</h2>
+    <p class="section-note">One row of external_events.csv, the input to the exogenous detector.</p>
+    <div class="file-viewer">
+      <div class="file-bar"><span class="path">external_events/output/external_events.csv</span><span class="dim">row 34 of 96</span></div>
+      <div class="file-body">event_id,event_date,event_type,source_name,real_source_type,affected_country,affected_sector,direction,severity,headline
+<span class="dim">EVT00034,2025-12-28,natural_disaster,EM-DAT disaster record (simulated),EM-DAT International Disaster Database,DE,Agriculture &amp; Food Production,negative,5,Severe weather event impacts Agriculture &amp; Food Production sector in DE</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Output — worklist.csv (excerpt)</h2>
+    <p class="section-note">The unified, row-per-recommendation table. 2,797 rows in the current run, one file, both detector families merged and re-ranked together.</p>
+    <div class="file-viewer">
+      <div class="file-bar"><span class="path">var/insights/worklist_20260905T151610Z.csv</span><span class="dim">rows 1, 5 of 2,797</span></div>
+      <div class="file-body">rank,score,category,client_id,legal_name,segment,sector,country,relationship_manager_id,event_type,recommended_action,evidence_summary,event_date,detection_id
+<span class="dim">1,0.9732,FINANCING_NEED,CL00207,van Mook NV,Mid-Corporate,Agriculture &amp; Food Production,DE,RM001,external_macro_event.v1,"RM to review whether this client is materially exposed to the event","natural_disaster (severity 5/5, negative)...",2025-12-28,external_macro_event.v1:EVT00034:CL00207
+5,0.7188,TREASURY_OPPORTUNITY,CL00288,Haering,Mid-Corporate,Professional &amp; Business Services,NL,RM016,large_incoming_payment.v1,"RM to review the transaction and recent account activity","658,830.34 flagged on 2025-11-05...",2025-11-05,large_incoming_payment.v1:f38d88c2-3641-4058-97fe-d9ce5b88a39d</span></div>
+    </div>
+    <table class="parsed-table">
+      <thead><tr><th>Rank</th><th>Score</th><th>Category</th><th>Client</th><th>Segment / Sector / Country</th><th>RM</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">1</td><td class="mono">0.9732</td><td><span class="cat-pill">FINANCING_NEED</span></td><td>van Mook NV (CL00207)</td><td>Mid-Corporate · Agriculture &amp; Food Production · DE</td><td class="mono">RM001</td></tr>
+        <tr><td class="mono">5</td><td class="mono">0.7188</td><td><span class="cat-pill">TREASURY_OPPORTUNITY</span></td><td>Haering (CL00288)</td><td>Mid-Corporate · Professional &amp; Business Services · NL</td><td class="mono">RM016</td></tr>
+      </tbody>
+    </table>
+    <p class="file-caption">Opens directly in Excel/Sheets/any BI tool — no parsing step required for an RM or an analyst to filter/sort by category, RM, or score.</p>
+  </section>
+
+  <section>
+    <h2>Output — digest_*.md (transaction detector, excerpt)</h2>
+    <p class="section-note">One narrative entry, unedited, from the endogenous pipeline's digest file.</p>
+    <div class="file-viewer">
+      <div class="file-bar"><span class="path">var/insights/digest_offline_ollama_2025-12-31_3402c502.md</span><span class="dim">entry 1 of 15</span></div>
+      <div class="file-body"><span class="dim"># RM Digest -- run offline_ollama_2025-12-31_3402c502
+
+**Synthetic proof-of-concept output. Not a real business recommendation, not derived from real client data.**</span>
+
+### #1 -- CL00288 / CL00288-A0 (score 0.72)
+
+- **Detection:** `large_incoming_payment.v1:f38d88c2-3641-4058-97fe-d9ce5b88a39d`
+- **Event date:** 2025-11-05
+- **Flagged amount:** 658,830.34 EUR
+
+**Observed facts:** On 2025-11-05, a transaction of 658,830.34 EUR was
+flagged, which is significantly larger than the baseline median of
+74,957.44 EUR, with a multiple of 24.82 above the baseline median.
+
+**Interpretation:** This transaction is an outlier in terms of size,
+potentially indicating a statistical anomaly.
+
+**Suggested action:** RM to review the transaction and recent account
+activity
+
+<span class="dim">**Caveats:** Synthetic POC output for RM review, not a validated
+business conclusion.
+
+_Narrative source: ollama:qwen2.5:7b_</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Output — digest_*.md (external event detector, excerpt)</h2>
+    <p class="section-note">Same file format, exogenous pipeline — deliberately identical structure so one digest format serves both detector families.</p>
+    <div class="file-viewer">
+      <div class="file-bar"><span class="path">var/insights/digest_external_macro_demo_2025-12-31_a55fe0e2.md</span><span class="dim">entry 1 of 8</span></div>
+      <div class="file-body">### #1 -- CL00207 / natural_disaster (EM-DAT International Disaster Database) (score 0.97)
+
+- **Detection:** `external_macro_event.v1:EVT00034:CL00207`
+- **Event date:** 2025-12-28
+- **Headline:** Severe weather event impacts Agriculture &amp; Food Production sector in DE
+- **Severity:** 5/5 &middot; **Direction:** negative
+- **Scope:** sector=Agriculture &amp; Food Production, country=DE
+
+**Observed facts:** The synthetic event scheduled for December 28, 2025,
+is a severe weather event that is expected to impact the Agriculture &amp;
+Food Production sector in DE. The client is in the Agriculture &amp; Food
+Production sector and is located in DE.
+
+**Interpretation:** Given the overlap between the client's sector and
+the affected country, the client may be exposed to the potential
+negative impacts of this event, such as supply chain disruptions or
+damage to assets.
+
+**Suggested action:** RM to review whether this client is materially
+exposed to the event
+
+<span class="dim">**Caveats:** This note is based on a simulated event and does not
+confirm the specific impact on the client. The suggested action is to
+review exposure, as the client's exact impact is uncertain.
+
+_Narrative source: ollama:qwen2.5:7b_</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Category reference — all six tags, exact definitions</h2>
+    <p class="section-note">Every row in worklist.csv carries exactly one of these. Counts are from the current 2,797-row run.</p>
+    <div class="cat-grid">
+      <div class="cat-row header">
+        <div class="cat-cell label">Category</div>
+        <div class="cat-cell label">Definition &amp; assignment mechanism</div>
+        <div class="cat-cell label">Produced by</div>
+        <div class="cat-cell label" style="text-align:right">Count</div>
+      </div>
+      <div class="cat-row">
+        <div class="cat-cell name">FINANCING_NEED</div>
+        <div class="cat-cell">Client likely needs a loan, guarantee, or credit line. Assigned when a public tender is won, a natural disaster hits (recovery financing), or a rate cut lowers borrowing cost.<span class="mech">Rule: static per event_type, or direction-conditional for rate_policy_change</span></div>
+        <div class="cat-cell mono">external_macro_event.v1</div>
+        <div class="cat-cell count">1,284</div>
+      </div>
+      <div class="cat-row">
+        <div class="cat-cell name">TREASURY_OPPORTUNITY</div>
+        <div class="cat-cell">Client likely has surplus cash for a deposit/investment conversation. Assigned to every large-incoming-payment detection, and to a rate rise (deposits become relatively more attractive).<span class="mech">Rule: static per rule_version, or direction-conditional</span></div>
+        <div class="cat-cell mono">large_incoming_payment.v1</div>
+        <div class="cat-cell count">521</div>
+      </div>
+      <div class="cat-row">
+        <div class="cat-cell name">RISK_REVIEW</div>
+        <div class="cat-cell">Credit/compliance awareness, not a sales opportunity. Assigned to sanctions/export-control changes and geopolitical disruption — exposure review, not outreach.<span class="mech">Rule: static per event_type</span></div>
+        <div class="cat-cell mono">external_macro_event.v1</div>
+        <div class="cat-cell count">451</div>
+      </div>
+      <div class="cat-row">
+        <div class="cat-cell name">ADVISORY_ONLY</div>
+        <div class="cat-cell">Relationship-maintenance conversation with no identified product angle yet. The honest fallback whenever a mapping can't be resolved further (e.g. a benign-direction energy-price move, or an EU regulatory change without a clear capex trigger).<span class="mech">Rule: fallback default</span></div>
+        <div class="cat-cell mono">external_macro_event.v1</div>
+        <div class="cat-cell count">310</div>
+      </div>
+      <div class="cat-row">
+        <div class="cat-cell name">HEDGING_NEED</div>
+        <div class="cat-cell">Client likely needs an FX/commodity hedge. Assigned specifically to a negative-direction commodity/energy shock affecting an exposed sector.<span class="mech">Rule: direction-conditional</span></div>
+        <div class="cat-cell mono">external_macro_event.v1</div>
+        <div class="cat-cell count">171</div>
+      </div>
+      <div class="cat-row">
+        <div class="cat-cell name">CAPEX_FINANCING</div>
+        <div class="cat-cell">Client likely needs equipment/transition financing. Assigned to a negative-direction EU regulatory change (compliance often forces capital expenditure) — the one category this build could not resolve more precisely without additional structured data.<span class="mech">Rule: direction-conditional, acknowledged limitation</span></div>
+        <div class="cat-cell mono">external_macro_event.v1</div>
+        <div class="cat-cell count">60</div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    All content above is copied verbatim from files generated on 2026-09-05 against a synthetic 300-client dataset. No real client, transaction, or event is represented. Reproduce with <span style="font-family:'IBM Plex Mono',monospace">./run_demo.sh</span> from the repository root.
+  </footer>
+</div>
