@@ -29,8 +29,8 @@ class RankingConfig:
     magnitude_saturation_at: float
 
     @classmethod
-    def from_rules_dict(cls, rules: dict) -> "RankingConfig":
-        r = rules["ranking"]
+    def from_rules_dict(cls, rules: dict, section: str = "ranking") -> "RankingConfig":
+        r = rules[section]
         return cls(
             magnitude_weight=r["magnitude_weight"],
             recency_weight=r["recency_weight"],
@@ -39,10 +39,16 @@ class RankingConfig:
         )
 
 
-def rank(detections: pd.DataFrame, as_of: date, config: RankingConfig) -> pd.DataFrame:
-    """Only ranks rows with status == 'detected' (not insufficient_evidence
-    or suppressed_cooldown -- those aren't active recommendations). Adds
-    magnitude_component, recency_component, score, and rank (1 = highest)."""
+def rank_generic(detections: pd.DataFrame, as_of: date, config: RankingConfig,
+                  magnitude_raw: pd.Series) -> pd.DataFrame:
+    """Shared magnitude+recency blend, independent of what 'magnitude' means
+    for a given detector family -- MAD-multiples for a transaction anomaly,
+    a 1-5 severity scale for an external event, or something else for a
+    future detector. Callers compute magnitude_raw in whatever units make
+    sense for their evidence, on the SAME [0, saturation] scale they choose;
+    this function only clips/weights/blends it with recency. Only ranks
+    rows with status == 'detected' (not insufficient_evidence or
+    suppressed_cooldown -- those aren't active recommendations)."""
     active = detections[detections["status"] == "detected"].copy()
     if active.empty:
         active["magnitude_component"] = []
@@ -51,11 +57,7 @@ def rank(detections: pd.DataFrame, as_of: date, config: RankingConfig) -> pd.Dat
         active["rank"] = []
         return active
 
-    baseline_median = active["baseline_median"].astype(float)
-    baseline_mad = active["baseline_mad"].astype(float).replace(0, np.nan)
-    mad_multiples = (active["flagged_amount"].astype(float) - baseline_median) / baseline_mad
-    mad_multiples = mad_multiples.fillna(active["threshold_multiplier"].astype(float))  # mad==0 edge case
-    active["magnitude_component"] = (mad_multiples / config.magnitude_saturation_at).clip(upper=1.0)
+    active["magnitude_component"] = (magnitude_raw.loc[active.index] / config.magnitude_saturation_at).clip(upper=1.0)
 
     event_dates = pd.to_datetime(active["event_date"]).dt.date
     age_days = event_dates.apply(lambda d: (as_of - d).days).clip(lower=0)
@@ -68,3 +70,20 @@ def rank(detections: pd.DataFrame, as_of: date, config: RankingConfig) -> pd.Dat
     active = active.sort_values("score", ascending=False).reset_index(drop=True)
     active["rank"] = active.index + 1
     return active
+
+
+def rank(detections: pd.DataFrame, as_of: date, config: RankingConfig) -> pd.DataFrame:
+    """large_incoming_payment ranking: magnitude = MAD-multiples above baseline."""
+    active_idx = detections[detections["status"] == "detected"].index
+    baseline_median = detections.loc[active_idx, "baseline_median"].astype(float)
+    baseline_mad = detections.loc[active_idx, "baseline_mad"].astype(float).replace(0, np.nan)
+    mad_multiples = (detections.loc[active_idx, "flagged_amount"].astype(float) - baseline_median) / baseline_mad
+    mad_multiples = mad_multiples.fillna(detections.loc[active_idx, "threshold_multiplier"].astype(float))
+    return rank_generic(detections, as_of, config, mad_multiples)
+
+
+def rank_macro(detections: pd.DataFrame, as_of: date, config: RankingConfig) -> pd.DataFrame:
+    """external_macro_event ranking: magnitude = severity (1-5 scale)."""
+    active_idx = detections[detections["status"] == "detected"].index
+    severity = detections.loc[active_idx, "severity"].astype(float)
+    return rank_generic(detections, as_of, config, severity)

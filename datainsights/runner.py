@@ -117,7 +117,11 @@ def run_once(
                         schema_version="v1", narrative=narrative,
                     )
                     narratives_generated += 1
-                digest_items.append({**row.to_dict(), "narrative": narrative})
+                digest_items.append({
+                    **row.to_dict(), "narrative": narrative,
+                    "subtitle": row["account_id"],
+                    "detail_lines": [f"- **Flagged amount:** {row['flagged_amount']:,.2f} {row['currency']}"],
+                })
 
             notes.append(
                 f"{narratives_generated} narrative(s) newly generated this run "

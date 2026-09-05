@@ -29,13 +29,21 @@ def write_digest(path: str, run_id: str, as_of: str, items: list[dict], run_note
     if not items:
         lines.append("_No active detections this run._")
     for item in items:
+        # 'subtitle' and 'detail_lines' let different detector families
+        # (transaction-based, external-macro-event-based, ...) each supply
+        # their own detail fields without this function hardcoding any one
+        # detector's schema -- "one digest, not two systems bolted together"
+        # (docs/objective.md).
+        subtitle = f" / {item['subtitle']}" if item.get("subtitle") else ""
         lines += [
-            f"### #{item['rank']} — {item['client_id']} / {item['account_id']} "
+            f"### #{item['rank']} — {item['client_id']}{subtitle} "
             f"(score {item['score']:.2f})",
             "",
             f"- **Detection:** `{item['detection_id']}`",
             f"- **Event date:** {item['event_date']}",
-            f"- **Flagged amount:** {item['flagged_amount']:,.2f} {item['currency']}",
+        ]
+        lines += item.get("detail_lines", [])
+        lines += [
             "",
             f"**Observed facts:** {item['narrative']['observed_facts']}",
             "",

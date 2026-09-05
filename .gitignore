@@ -8,3 +8,4 @@ data_generator/output_holdout/*.csv
 data_generator/output_holdout/protected_evaluator_only/*.csv
 var/
 .pytest_cache/
+external_events/output/*.csv

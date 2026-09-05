@@ -28,6 +28,20 @@ ranking:
   # magnitude_component = min(1.0, mad_multiples / magnitude_saturation_at)
   magnitude_saturation_at: 20.0
 
+external_macro_event:
+  min_severity: 3
+  cooldown_days: 45
+
+ranking_macro:
+  # same magnitude+recency formula (datainsights/ranking.rank_generic), but
+  # magnitude here is a 1-5 severity scale, not MAD-multiples -- needs its
+  # own saturation point, not the transaction detector's 20.0
+  magnitude_weight: 0.6
+  recency_weight: 0.4
+  recency_half_life_days: 30   # macro events stay relevant longer than a
+                                 # single flagged transaction
+  magnitude_saturation_at: 5.0
+
 narrative:
   narrator_model: qwen2.5:7b
   judge_model: llama3.1:8b   # deliberately a different model than the

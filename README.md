@@ -13,6 +13,8 @@ for why, and how the synthetic data is grounded in public statistics instead.
 
 ## Docs
 
+- [Objective](docs/objective.md) — the reference document: one-sentence goal, scope, non-negotiable constraints, what "done" means
+- [Gap Analysis](docs/gap_analysis.md) — current state vs. that objective, table form
 - [User Guide](docs/user_guide.md) — setup, running the pipeline, reading output, troubleshooting
 - [Snowflake Setup](docs/snowflake_setup.md) — step-by-step: warehouse, DDL, data load, credentials
 - [Architecture](docs/architecture.md) — system design, data flow diagram, component map, design decisions
@@ -34,7 +36,15 @@ Short version:
       end-to-end, no paid calls, no Snowflake/AWS calls
 - [x] Evaluation harness (dev-diagnostic only — see contamination
       disclosure in `data_generator/output/protected_evaluator_only/README.md`)
-- [ ] Replay/monitor mode with checkpoints; ML ranking challenger; AWS path
+- [x] **Exogenous event category** (`external_events/`) — simulated market/
+      industry/political events (rate changes, tenders, energy shocks,
+      sanctions, regulation, geopolitical disruption, disasters), each
+      tagged with the real free API it maps to (ECB, TED, Eurostat, EU
+      sanctions list, EUR-Lex, GDELT, EM-DAT); matched to real clients by
+      sector/country; ranked and narrated through a hedged-language
+      validator. Run: `python -m external_events.demo_scenario`
+- [ ] Replay/monitor mode with checkpoints; ML ranking challenger; AWS path;
+      review/follow-up dashboard; real (non-simulated) external event source
 
 ## Setup
 
@@ -52,7 +62,8 @@ python -m datainsights.cli                  # detect -> rank -> narrate -> diges
 python -m datainsights.status                # what happened last
 python -m datainsights.judge.run_sample 10   # offline semantic judge on a sample
 python -m evaluation.evaluate                # dev-diagnostic precision/recall
-python -m pytest tests/ -v                   # detector test suite
+python -m external_events.demo_scenario      # exogenous-event pipeline demo
+python -m pytest tests/ -v                   # detector test suite (16 cases)
 ```
 
 ## Generate the dataset
