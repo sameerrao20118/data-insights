@@ -123,13 +123,24 @@ def _sample_event(event_id: int, event_date_: date, event_type: str) -> dict:
     severity = int(rng.integers(spec["severity_range"][0], spec["severity_range"][1] + 1))
     direction = "negative" if rng.random() < spec["p_negative"] else "positive"
 
+    # action word MUST be derived from direction, not sampled independently
+    # of it -- otherwise a headline can say "cut" while direction says
+    # "negative", contradicting itself (a real bug found and fixed during
+    # this build, before the category tagging below started relying on
+    # 'direction' being trustworthy)
+    if event_type == "rate_policy_change":
+        action = "cut" if direction == "positive" else "raised"
+    elif event_type == "sanctions_regulatory_change":
+        action = "eased" if direction == "positive" else "tightened"
+    else:
+        action = ""
+
     headline = HEADLINE_TEMPLATES[event_type].format(
-        action=rng.choice(["raised", "cut"]) if event_type == "rate_policy_change"
-               else rng.choice(["tightened", "eased"]),
+        action=action,
         bps=int(rng.choice([25, 50, 75])),
         country=country or "an EU member state",
         sector=sector or "multiple sectors",
-        direction_word="rise" if direction == "negative" else "fall",
+        direction_word="fall" if direction == "positive" else "rise",
         scope=country or "the EU",
     )
 
