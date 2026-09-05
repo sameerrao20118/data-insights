@@ -26,6 +26,17 @@ detector + ranking + narrative path that produces a demonstrable scenario.
 See `external_events/README.md` for what was built and
 `external_events/demo_scenario.py` for the runnable demonstration.
 
+## Compliance/realism check (this session)
+
+`docs/compliance_and_industry_context.md` — checked live (not asserted
+from memory): no direct open-source precedent for macro-event-driven NBA
+exists (nearest is geopolitical-risk-as-systemic-risk literature, a
+different framing); the current design sits outside GDPR personal-data
+and EU AI Act Annex III scope because matching operates on legal entities,
+not natural persons, and never correlates with `pep_flag`. No code change
+needed — one boundary flagged not to cross later (see that file's last
+section).
+
 ## What's still open after this session
 
 Review/tracking dashboard, incremental/replay monitoring, transaction-level

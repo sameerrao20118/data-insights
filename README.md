@@ -15,6 +15,7 @@ for why, and how the synthetic data is grounded in public statistics instead.
 
 - [Objective](docs/objective.md) — the reference document: one-sentence goal, scope, non-negotiable constraints, what "done" means
 - [Gap Analysis](docs/gap_analysis.md) — current state vs. that objective, table form
+- [Compliance & Industry Context](docs/compliance_and_industry_context.md) — real GDPR/EU AI Act boundary checks and industry-precedent search for the exogenous event category, sources dated
 - [User Guide](docs/user_guide.md) — setup, running the pipeline, reading output, troubleshooting
 - [Snowflake Setup](docs/snowflake_setup.md) — step-by-step: warehouse, DDL, data load, credentials
 - [Architecture](docs/architecture.md) — system design, data flow diagram, component map, design decisions
