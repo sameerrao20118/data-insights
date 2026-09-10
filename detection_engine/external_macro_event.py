@@ -27,7 +27,7 @@ import pandas as pd
 DETECTION_COLUMNS = [
     "detection_id", "rule_version", "client_id", "event_id", "event_date",
     "detection_as_of", "event_type", "source_name", "real_source_type",
-    "affected_country", "affected_sector", "direction", "severity",
+    "source_context", "affected_country", "affected_sector", "direction", "severity",
     "headline", "description", "status",
 ]
 
@@ -72,6 +72,7 @@ def detect(events: pd.DataFrame, clients: pd.DataFrame, config: MacroDetectorCon
                 "event_type": ev["event_type"],
                 "source_name": ev["source_name"],
                 "real_source_type": ev["real_source_type"],
+                "source_context": ev["source_context"],
                 "affected_country": ev["affected_country"],
                 "affected_sector": ev["affected_sector"],
                 "direction": ev["direction"],

@@ -22,6 +22,7 @@ class MacroEvidencePacket:
     event_type: str
     source_name: str
     real_source_type: str
+    source_context: str
     affected_country: str
     affected_sector: str
     direction: str

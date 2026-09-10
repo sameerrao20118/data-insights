@@ -46,6 +46,8 @@ EVENT_TYPE_CATALOG = {
     "rate_policy_change": {
         "source_name": "ECB Governing Council decision (simulated)",
         "real_source": "ECB SDMX API (Statistical Data and Metadata eXchange)",
+        "source_context": "Structured, authoritative, near-real-time policy-rate series -- "
+                           "no extraction step needed.",
         "sectors": None,  # EU-wide, all sectors
         "country_scope": "EU-wide",
         "severity_range": (2, 4),
@@ -54,6 +56,8 @@ EVENT_TYPE_CATALOG = {
     "public_tender_award": {
         "source_name": "TED award notice (simulated)",
         "real_source": "TED (Tenders Electronic Daily) API",
+        "source_context": "Structured award notices with country/sector/value fields -- "
+                           "no extraction step needed.",
         "sectors": ["Construction", "Transportation & Logistics", "Manufacturing",
                     "Information & Communication", "Public Administration / Institutional"],
         "country_scope": "single_country",
@@ -63,6 +67,8 @@ EVENT_TYPE_CATALOG = {
     "commodity_energy_shock": {
         "source_name": "Eurostat energy price index update (simulated)",
         "real_source": "Eurostat / ECB energy statistics",
+        "source_context": "Structured index series, but published on a weekly-to-monthly "
+                           "lag, not real-time.",
         "sectors": ["Energy & Utilities", "Manufacturing", "Transportation & Logistics",
                     "Agriculture & Food Production"],
         "country_scope": "EU-wide",
@@ -72,6 +78,8 @@ EVENT_TYPE_CATALOG = {
     "sanctions_regulatory_change": {
         "source_name": "EU sanctions / export control update (simulated)",
         "real_source": "EU consolidated sanctions list / OpenSanctions",
+        "source_context": "Structured, authoritative, updates on change -- no extraction "
+                           "step needed.",
         "sectors": None,
         "country_scope": "single_country",
         "severity_range": (2, 5),
@@ -80,6 +88,8 @@ EVENT_TYPE_CATALOG = {
     "eu_regulatory_change": {
         "source_name": "EUR-Lex regulatory notice (simulated)",
         "real_source": "EUR-Lex",
+        "source_context": "Structured legal-act metadata, but sector-level impact still "
+                           "needs interpretation.",
         "sectors": ["Manufacturing", "Energy & Utilities", "Transportation & Logistics",
                     "Agriculture & Food Production"],
         "country_scope": "EU-wide",
@@ -89,6 +99,8 @@ EVENT_TYPE_CATALOG = {
     "geopolitical_disruption": {
         "source_name": "GDELT global event digest (simulated)",
         "real_source": "GDELT Project (Global Database of Events, Language, and Tone)",
+        "source_context": "High-volume unstructured event digest -- needs LLM extraction "
+                           "first; noisier, lower confidence per item.",
         "sectors": ["Transportation & Logistics", "Energy & Utilities",
                     "Wholesale & Retail Trade", "Manufacturing"],
         "country_scope": "single_country",
@@ -98,6 +110,8 @@ EVENT_TYPE_CATALOG = {
     "natural_disaster": {
         "source_name": "EM-DAT disaster record (simulated)",
         "real_source": "EM-DAT International Disaster Database",
+        "source_context": "Structured disaster records, but reporting lag can run days "
+                           "to weeks after the event.",
         "sectors": ["Agriculture & Food Production", "Construction", "Real Estate"],
         "country_scope": "single_country",
         "severity_range": (3, 5),
@@ -150,6 +164,7 @@ def _sample_event(event_id: int, event_date_: date, event_type: str) -> dict:
         "event_type": event_type,
         "source_name": spec["source_name"],
         "real_source_type": spec["real_source"],
+        "source_context": spec["source_context"],
         "affected_country": country if country else "",
         "affected_sector": sector if sector else "",
         "direction": direction,
@@ -205,6 +220,7 @@ def gen_scenario_events(start_id: int) -> list[dict]:
             "event_type": etype,
             "source_name": EVENT_TYPE_CATALOG[etype]["source_name"],
             "real_source_type": EVENT_TYPE_CATALOG[etype]["real_source"],
+            "source_context": EVENT_TYPE_CATALOG[etype]["source_context"],
             "affected_country": country or "",
             "affected_sector": sector or "",
             "direction": direction,

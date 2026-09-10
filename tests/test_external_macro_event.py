@@ -24,7 +24,8 @@ CLIENTS = pd.DataFrame([
 def make_event(event_id, event_date, sector="", country="", severity=4, direction="negative"):
     return {
         "event_id": event_id, "event_date": event_date, "event_type": "commodity_energy_shock",
-        "source_name": "test", "real_source_type": "test", "affected_country": country,
+        "source_name": "test", "real_source_type": "test", "source_context": "test",
+        "affected_country": country,
         "affected_sector": sector, "direction": direction, "severity": severity,
         "headline": "h", "description": "d",
     }

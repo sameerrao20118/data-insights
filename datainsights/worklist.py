@@ -149,7 +149,8 @@ def build_worklist(clients_csv_path: str, transaction_state_path: str | None = N
             row["category"] = categorize_macro_event(ev["event_type"], ev["direction"])
             row["evidence_summary"] = (
                 f"{ev['event_type']} (severity {ev['severity']}/5, {ev['direction']}) on "
-                f"{row['event_date']}: \"{ev['headline']}\" [{ev['real_source_type']}]"
+                f"{row['event_date']}: \"{ev['headline']}\" [{ev['real_source_type']} -- "
+                f"{ev['source_context']}]"
             )
             all_rows.append(row)
 

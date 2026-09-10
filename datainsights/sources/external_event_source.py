@@ -25,7 +25,7 @@ import pandas as pd
 
 REQUIRED_COLUMNS = [
     "event_id", "event_date", "event_type", "source_name", "real_source_type",
-    "affected_country", "affected_sector", "direction", "severity",
+    "source_context", "affected_country", "affected_sector", "direction", "severity",
     "headline", "description",
 ]
 

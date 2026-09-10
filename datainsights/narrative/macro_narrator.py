@@ -123,7 +123,9 @@ def render(evidence: MacroEvidencePacket, base_url: str, model: str, timeout_sec
                 "interpretation": parsed["interpretation"],
                 "suggested_action": parsed["suggested_action"],
                 "evidence_references": [evidence.detection_id, evidence.event_id],
-                "caveats": parsed["caveats"] + " Synthetic POC output for RM review, not a validated business conclusion.",
+                "caveats": parsed["caveats"] + " Synthetic POC output for RM review, not a "
+                    "validated business conclusion. Real source in production: "
+                    f"{evidence.real_source_type} -- {evidence.source_context}",
                 "narrative_source": f"ollama:{model}",
             }
         last_problems = problems

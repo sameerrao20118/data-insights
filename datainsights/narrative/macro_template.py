@@ -29,7 +29,8 @@ def render(evidence: MacroEvidencePacket) -> dict:
         "Synthetic POC output for RM review, not a business conclusion. This event is "
         "simulated, not a real occurrence -- see external_events/README.md for the real "
         f"source ({evidence.real_source_type}) this event type would come from in "
-        "production. Sector/country overlap is not confirmation of client-specific impact."
+        f"production, and what that source would actually bring: {evidence.source_context} "
+        "Sector/country overlap is not confirmation of client-specific impact."
     )
     return {
         "detection_id": evidence.detection_id,
