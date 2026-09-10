@@ -6,9 +6,10 @@ Practical how-to. For what's actually verified working vs. NOT RUN, see
 
 ## Where you are right now
 
-- **Steps 1-6 below (local, offline, Ollama-only): alive and verified.**
-  You can run the whole detect → rank → narrate → digest pipeline today,
-  right now, with zero setup beyond what's in Step 1.
+- **Steps 1-6c below (local, offline, Ollama-only): alive and verified.**
+  You can run both pipelines (endogenous transaction events and exogenous
+  market/political events) end to end today, right now, with zero setup
+  beyond what's in Step 1.
 - **Step 7 (Snowflake): not yet connected.** This needs your own account
   actions (create a warehouse, load data, set credentials) that only you
   can do — see [`snowflake_setup.md`](snowflake_setup.md) for the full
@@ -108,13 +109,47 @@ this is synthetic POC output, not a real business conclusion.
 python -m datainsights.status              # last run, active detection count, cache stats
 python -m datainsights.judge.run_sample 10 # offline semantic judge on 10 cached narratives
 python -m evaluation.evaluate               # dev-diagnostic precision/recall
-python -m pytest tests/ -v                  # detector test suite (9 cases)
+python -m pytest tests/ -v                  # detector + macro-event test suite (16 cases)
 ```
 
 **Read the judge and evaluation output critically, not as a pass/fail
 badge** — both modules print explicit caveats about what the numbers do
 and don't mean (contaminated development session, correlated narrator/
 judge models). That's intentional, not boilerplate to skip past.
+
+## 6b. Run the exogenous (market/political event) pipeline
+
+Step 4 above only reacts to a client's own transactions. A second,
+parallel pipeline reacts to external market/political/industry events —
+rate changes, tenders, sanctions, disasters — matched to clients by
+sector/country. See `docs/architecture.md` ("Second pipeline: exogenous
+events") for how it's wired.
+
+```bash
+python -m external_events.simulate_external_events   # regenerate the simulated event feed
+python -m external_events.demo_scenario               # detect -> rank -> narrate -> digest
+```
+
+Writes its own digest to `var/insights/digest_external_macro_demo_*.md`.
+Same idempotency/caching behavior as Step 4.
+
+## 6c. Build the unified RM worklist
+
+One row per client, tagging every recommendation (from either pipeline)
+with a category (`FINANCING_NEED`, `TREASURY_OPPORTUNITY`, `RISK_REVIEW`,
+`ADVISORY_ONLY`, `HEDGING_NEED`, `CAPEX_FINANCING`) and the evidence
+behind it:
+
+```bash
+python -m datainsights.build_worklist
+```
+
+Writes `var/insights/worklist_<timestamp>.csv`. This is the file an RM
+would actually work from — see `docs/artifacts/output-reference.html`
+for real column-by-column examples and what each category means.
+
+**Or run everything above in one shot:** `./run_demo.sh` — tests, both
+pipelines, evaluation, and the worklist, in sequence.
 
 ## 7. Wiring Snowflake (optional, when you're ready)
 

@@ -1,0 +1,373 @@
+<title>Demo Run Sheet</title>
+<style>
+:root{
+  --paper:#f5f2ea; --paper-raised:#eee9df;
+  --ink:#22261f; --ink-soft:#565a4f; --rule:#d8d2c0;
+  --teal:#1f6f66; --teal-soft:#e4efe9;
+  --grey:#8a8578; --grey-soft:#eceae1;
+  --red:#a13a2f; --red-soft:#f4e6e0;
+  --gold:#a3791f; --gold-soft:#f2e9d3;
+  --code-bg:#efeadb; --code-ink:#3a3c30;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#1c1d18; --paper-raised:#24251f;
+    --ink:#eae6d8; --ink-soft:#b3ae9c; --rule:#3a3b31;
+    --teal:#5ab3a4; --teal-soft:#1f3330;
+    --grey:#9a9484; --grey-soft:#2a2a24;
+    --red:#d97b6c; --red-soft:#3a2521;
+    --gold:#d4ac5a; --gold-soft:#3a2f1a;
+    --code-bg:#22231d; --code-ink:#d9d4c2;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#1c1d18; --paper-raised:#24251f;
+  --ink:#eae6d8; --ink-soft:#b3ae9c; --rule:#3a3b31;
+  --teal:#5ab3a4; --teal-soft:#1f3330;
+  --grey:#9a9484; --grey-soft:#2a2a24;
+  --red:#d97b6c; --red-soft:#3a2521;
+  --gold:#d4ac5a; --gold-soft:#3a2f1a;
+  --code-bg:#22231d; --code-ink:#d9d4c2;
+}
+*{box-sizing:border-box;}
+body{
+  background:var(--paper); color:var(--ink);
+  font-family:'IBM Plex Sans',system-ui,sans-serif;
+  font-size:15px; line-height:1.55;
+}
+.wrap{max-width:920px; margin:0 auto; padding:48px 28px 90px;}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace;}
+header.top{border-bottom:2px solid var(--ink); padding-bottom:22px; margin-bottom:8px;}
+.kicker{
+  font-family:'IBM Plex Mono',monospace; font-size:11.5px; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--teal); font-weight:600; margin:0 0 10px;
+}
+h1{font-size:32px; margin:0 0 8px; text-wrap:balance; letter-spacing:-0.01em;}
+.subtitle{color:var(--ink-soft); font-size:15px; max-width:640px; margin:0;}
+.meta{display:flex; gap:18px; margin-top:18px; font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft); flex-wrap:wrap;}
+.meta b{color:var(--ink); font-weight:600;}
+
+nav.toc{
+  display:grid; grid-template-columns:repeat(4,1fr); gap:8px;
+  margin:26px 0 40px;
+}
+nav.toc a{
+  display:block; padding:10px 12px; background:var(--paper-raised);
+  border:1px solid var(--rule); border-radius:3px; text-decoration:none;
+  color:var(--ink); font-size:12.5px; font-family:'IBM Plex Mono',monospace;
+}
+nav.toc a b{display:block; color:var(--teal); font-size:11px; margin-bottom:3px;}
+
+section.step{
+  display:grid; grid-template-columns:52px 1fr; gap:20px;
+  padding:30px 0; border-bottom:1px solid var(--rule);
+}
+section.step:last-of-type{border-bottom:none;}
+.num{
+  font-family:'IBM Plex Mono',monospace; font-size:26px; font-weight:600;
+  color:var(--rule); line-height:1; padding-top:2px;
+}
+.step h2{font-size:19px; margin:0 0 4px; letter-spacing:-0.005em;}
+.step .role{
+  font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--ink-soft); margin:0 0 14px;
+}
+
+.say{
+  background:var(--gold-soft); border-left:3px solid var(--gold);
+  padding:12px 16px; border-radius:0 4px 4px 0; margin:12px 0;
+  font-size:14px;
+}
+.say .lbl{font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--gold); display:block; margin-bottom:5px; font-weight:600;}
+
+pre.cmd{
+  background:var(--code-bg); color:var(--code-ink); border:1px solid var(--rule);
+  border-radius:4px; padding:12px 14px; font-family:'IBM Plex Mono',monospace;
+  font-size:12.8px; overflow-x:auto; margin:12px 0; line-height:1.6;
+}
+pre.cmd .c{color:var(--teal);}
+pre.cmd .out{color:var(--ink-soft); font-style:italic;}
+
+.refs{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;}
+.refs a{
+  font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--teal);
+  text-decoration:none; border:1px solid var(--teal); padding:4px 9px;
+  border-radius:20px; background:var(--teal-soft);
+}
+
+table.tags{width:100%; border-collapse:collapse; margin:14px 0; font-size:13px;}
+table.tags th{
+  text-align:left; font-family:'IBM Plex Mono',monospace; font-size:10.5px;
+  text-transform:uppercase; letter-spacing:.08em; color:var(--ink-soft);
+  border-bottom:1px solid var(--ink); padding:6px 10px 8px 0;
+}
+table.tags td{padding:9px 10px 9px 0; border-bottom:1px solid var(--rule); vertical-align:top;}
+.pill{
+  display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:10.5px;
+  font-weight:600; padding:2px 8px; border-radius:20px; white-space:nowrap;
+}
+.pill.stat{background:var(--teal-soft); color:var(--teal);}
+.pill.rule{background:var(--grey-soft); color:var(--grey);}
+.pill.llm{background:var(--gold-soft); color:var(--gold);}
+.pill.ml{background:var(--red-soft); color:var(--red);}
+
+.cols2{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:14px 0;}
+.card{background:var(--paper-raised); border:1px solid var(--rule); border-radius:5px; padding:15px 16px;}
+.card h3{margin:0 0 8px; font-size:13.5px; display:flex; align-items:center; gap:7px;}
+.dot{width:8px; height:8px; border-radius:50%; display:inline-block;}
+.dot.endo{background:var(--teal);} .dot.exo{background:var(--gold);}
+.card p{margin:0 0 8px; font-size:13px; color:var(--ink-soft);}
+.card ul{margin:0; padding-left:18px; font-size:12.8px; color:var(--ink-soft);}
+.card ul li{margin-bottom:3px;}
+
+table.matrix{width:100%; border-collapse:collapse; margin:14px 0; font-size:12.5px;}
+table.matrix th, table.matrix td{border:1px solid var(--rule); padding:8px 10px; text-align:left; vertical-align:top;}
+table.matrix th{background:var(--paper-raised); font-family:'IBM Plex Mono',monospace; font-size:11px; text-transform:uppercase; letter-spacing:.05em;}
+table.matrix td.now{background:var(--teal-soft);}
+table.matrix td.later{background:var(--grey-soft);}
+
+.stat-row{display:flex; gap:10px; margin:14px 0; flex-wrap:wrap;}
+.stat{
+  flex:1; min-width:110px; background:var(--paper-raised); border:1px solid var(--rule);
+  border-radius:5px; padding:10px 12px;
+}
+.stat b{display:block; font-family:'IBM Plex Mono',monospace; font-size:20px; color:var(--teal); font-variant-numeric:tabular-nums;}
+.stat span{font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.05em;}
+
+.caveat{
+  background:var(--red-soft); border:1px solid var(--red); border-radius:5px;
+  padding:14px 16px; margin-top:14px; font-size:13.5px; color:var(--ink);
+}
+.caveat b{color:var(--red);}
+
+footer{margin-top:50px; padding-top:20px; border-top:1px solid var(--rule);
+  font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--ink-soft);}
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<div class="wrap">
+
+<header class="top">
+  <p class="kicker">DataInsights &middot; live walkthrough</p>
+  <h1>Demo Run Sheet</h1>
+  <p class="subtitle">A script for running this proof-of-concept live on your MacBook while
+  narrating the architecture, the detection logic, and the local-vs-Snowflake path — in order,
+  each step naming exactly what to say, what to run, and what it proves.</p>
+  <div class="meta">
+    <span><b>Audience:</b> sponsor / platform review</span>
+    <span><b>Runtime:</b> ~10 min talk, ~2 min compute</span>
+    <span><b>Requires:</b> Ollama running locally, nothing else</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <a href="#step1"><b>01</b>Business problem</a>
+  <a href="#step2"><b>02</b>Architecture</a>
+  <a href="#step3"><b>03</b>Where the logic sits</a>
+  <a href="#step4"><b>04</b>Two event categories</a>
+  <a href="#step5"><b>05</b>Local now vs Snowflake later</a>
+  <a href="#step6"><b>06</b>Run it — setup check</a>
+  <a href="#step7"><b>07</b>Run it — both pipelines</a>
+  <a href="#step8"><b>08</b>What to point at</a>
+</nav>
+
+<section class="step" id="step1">
+  <div class="num">01</div>
+  <div>
+    <h2>Open with the business problem</h2>
+    <p class="role">30 seconds, no terminal yet</p>
+    <div class="say">
+      <span class="lbl">say</span>
+      Relationship managers reach out on a calendar, not on a signal — quarterly check-ins,
+      not "this client just got hit by an energy price shock" or "this account just received
+      a payment three times its normal size." Two kinds of signal go unwatched: what's
+      happening <em>inside</em> a client's own accounts, and what's happening <em>around</em>
+      them in the market. This system watches both and turns them into a ranked,
+      evidence-backed worklist.
+    </div>
+    <div class="refs">
+      <a href="docs/artifacts/first-to-notice-pitch.html">first-to-notice-pitch.html</a>
+    </div>
+  </div>
+</section>
+
+<section class="step" id="step2">
+  <div class="num">02</div>
+  <div>
+    <h2>Show the architecture</h2>
+    <p class="role">Reference — pipeline-blueprint diagram</p>
+    <p>Source data (client, transaction, external event) &rarr; detector &rarr; ranking
+    &rarr; narrative &rarr; digest, plus the isolation boundary around ground-truth labels.
+    Walk the Mermaid diagram in <span class="mono">docs/architecture.md</span> or the
+    presentation version below.</p>
+    <div class="refs">
+      <a href="docs/architecture.md">docs/architecture.md</a>
+      <a href="docs/artifacts/pipeline-blueprint.html">pipeline-blueprint.html</a>
+      <a href="docs/artifacts/production-blueprint.html">production-blueprint.html</a>
+    </div>
+  </div>
+</section>
+
+<section class="step" id="step3">
+  <div class="num">03</div>
+  <div>
+    <h2>Name where each kind of logic sits</h2>
+    <p class="role">The question every technical reviewer asks first</p>
+    <table class="tags">
+      <tr><th>Stage</th><th>Technique</th><th>Why not something else</th></tr>
+      <tr><td>Detection (transaction)</td><td><span class="pill stat">STATISTICAL</span></td>
+        <td>Rolling median absolute deviation vs. trailing baseline — explainable, no training data needed yet</td></tr>
+      <tr><td>Detection (external event)</td><td><span class="pill rule">RULE-BASED</span></td>
+        <td>Sector/country match — a join, not a model; nothing to overfit</td></tr>
+      <tr><td>Ranking</td><td><span class="pill stat">STATISTICAL</span></td>
+        <td>Explicit magnitude + recency formula, every component visible — no opaque score, no ML challenger until real conversion labels exist</td></tr>
+      <tr><td>Narrative (evidence &rarr; text)</td><td><span class="pill llm">LLM</span></td>
+        <td>Local Ollama only, validated against the evidence packet before acceptance; template fallback on failure</td></tr>
+      <tr><td>Quality check</td><td><span class="pill llm">LLM</span></td>
+        <td>Sampled judge, deliberately a different model than the narrator</td></tr>
+      <tr><td>Not built yet</td><td><span class="pill ml">ML</span></td>
+        <td>Deferred on purpose — no real RM accept/reject outcomes exist yet to train against</td></tr>
+    </table>
+    <div class="say">
+      <span class="lbl">say</span>
+      Machine learning is the one thing deliberately <em>not</em> in this pipeline yet — not
+      because it's hard, but because there's no real outcome data to train it against. Everything
+      running today is either arithmetic you can check by hand, or an LLM writing a sentence
+      about facts a validator already confirmed.
+    </div>
+  </div>
+</section>
+
+<section class="step" id="step4">
+  <div class="num">04</div>
+  <div>
+    <h2>Two event categories — endogenous and exogenous</h2>
+    <p class="role">This is the part most NBA systems don't do</p>
+    <div class="cols2">
+      <div class="card">
+        <h3><span class="dot endo"></span>Endogenous — the client's own data</h3>
+        <p>A client's own transactions, out of pattern for them specifically.</p>
+        <ul>
+          <li>Large incoming payment vs. 90-day trailing baseline</li>
+          <li>Detector: <span class="mono">large_incoming_payment.py</span></li>
+          <li>7 more trigger types labeled in data, not yet detected (cash-flow stress, FX exposure, treasury surplus, ...)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="dot exo"></span>Exogenous — the world around them</h3>
+        <p>Market/political/industry events, matched by sector + country.</p>
+        <ul>
+          <li>Rate changes (ECB), tenders (TED), energy shocks (Eurostat), sanctions, regulation (EUR-Lex), geopolitical events (GDELT), disasters (EM-DAT)</li>
+          <li>Detector: <span class="mono">external_macro_event.py</span></li>
+          <li>Each event now carries <span class="mono">source_context</span> — whether that real API is structured/real-time, lagged, or needs LLM extraction first</li>
+        </ul>
+      </div>
+    </div>
+    <div class="say">
+      <span class="lbl">say</span>
+      A sanction on a country can open an export opportunity for a client in that sector — that's
+      a signal no amount of watching the client's own transactions would ever surface. Both
+      categories write into the same worklist, tagged with the same six recommendation categories,
+      so an RM sees one list, not two.
+    </div>
+    <div class="refs">
+      <a href="external_events/README.md">external_events/README.md</a>
+      <a href="docs/compliance_and_industry_context.md">compliance_and_industry_context.md</a>
+    </div>
+  </div>
+</section>
+
+<section class="step" id="step5">
+  <div class="num">05</div>
+  <div>
+    <h2>Local machine now vs. Snowflake later</h2>
+    <p class="role">What actually changes when the data source swaps</p>
+    <table class="matrix">
+      <tr><th></th><th>Local (today)</th><th>Snowflake (later)</th></tr>
+      <tr><td>Source</td><td class="now">DuckDB over CSV</td><td class="later">SnowflakeSource, same <span class="mono">DataSource</span> interface</td></tr>
+      <tr><td>Detector / ranking / narrative code</td><td class="now">Unchanged</td><td class="later">Unchanged — this is the point</td></tr>
+      <tr><td>External events</td><td class="now">Simulated CSV</td><td class="later">External Access Integration &rarr; real ECB/TED/GDELT APIs, server-side</td></tr>
+      <tr><td>State</td><td class="now">SQLite</td><td class="later">Same, or a remote store if concurrency needs it</td></tr>
+      <tr><td>LLM</td><td class="now">Local Ollama</td><td class="later">Local Ollama — never Cortex/Bedrock, by policy</td></tr>
+    </table>
+    <div class="say">
+      <span class="lbl">say</span>
+      Only one box in the architecture diagram changes — the source adapter. Nothing about how
+      a trigger is detected, ranked, or narrated depends on where the bytes come from.
+    </div>
+    <div class="refs">
+      <a href="docs/artifacts/deployment-options.html">deployment-options.html</a>
+      <a href="docs/snowflake_setup.md">docs/snowflake_setup.md</a>
+    </div>
+  </div>
+</section>
+
+<section class="step" id="step6">
+  <div class="num">06</div>
+  <div>
+    <h2>Run it — one-time setup check</h2>
+    <p class="role">Do this before the room fills up, not live</p>
+    <pre class="cmd">cd ~/code/datainsights
+<span class="c">source</span> .venv/bin/activate
+curl http://127.0.0.1:11434/api/tags   <span class="out"># confirms Ollama is up</span></pre>
+  </div>
+</section>
+
+<section class="step" id="step7">
+  <div class="num">07</div>
+  <div>
+    <h2>Run it — the whole thing, live</h2>
+    <p class="role">One command, or step through it narrating each stage</p>
+    <pre class="cmd">./run_demo.sh</pre>
+    <p>Or narrate each stage separately:</p>
+    <pre class="cmd">python -m pytest tests/ -v                    <span class="out"># 16 tests, both detectors</span>
+python -m datainsights.cli                     <span class="out"># endogenous: detect -> rank -> narrate -> digest</span>
+python -m external_events.demo_scenario        <span class="out"># exogenous: same shape, external events</span>
+python -m datainsights.build_worklist          <span class="out"># unify both into one RM worklist</span></pre>
+    <div class="say">
+      <span class="lbl">say</span>
+      Re-running this is idempotent — no duplicate detections, and narratives already generated
+      are served from cache. That's not an accident; it's what lets this run on a schedule later
+      without flooding an RM with repeats of the same thing.
+    </div>
+    <div class="refs">
+      <a href="docs/user_guide.md">docs/user_guide.md</a>
+      <a href="run_demo.sh">run_demo.sh</a>
+    </div>
+  </div>
+</section>
+
+<section class="step" id="step8">
+  <div class="num">08</div>
+  <div>
+    <h2>What to point at once it's done</h2>
+    <p class="role">The actual output, from a real run of this dataset</p>
+    <div class="stat-row">
+      <div class="stat"><b>1,284</b><span>Financing need</span></div>
+      <div class="stat"><b>521</b><span>Treasury opportunity</span></div>
+      <div class="stat"><b>451</b><span>Risk review</span></div>
+      <div class="stat"><b>310</b><span>Advisory only</span></div>
+      <div class="stat"><b>171</b><span>Hedging need</span></div>
+      <div class="stat"><b>60</b><span>Capex financing</span></div>
+    </div>
+    <pre class="cmd">ls -t var/insights/digest_*.md | head -2   <span class="out"># narrative digests</span>
+ls -t var/insights/worklist_*.csv | head -1 <span class="out"># the unified worklist</span></pre>
+    <p>Open the worklist CSV directly — one row per client, with category, evidence summary,
+    and recommended action. That's the file an RM would actually work from.</p>
+    <div class="refs">
+      <a href="docs/artifacts/output-reference.html">output-reference.html</a>
+      <a href="docs/artifacts/simulation-results.html">simulation-results.html</a>
+    </div>
+    <div class="caveat">
+      <b>Say this out loud, every time:</b> this is a synthetic proof-of-concept dataset — no
+      real client or transaction data anywhere in it. The numbers above prove the pipeline runs
+      end to end, not that it would generate this much opportunity against real data. That claim
+      needs a real pilot, not a demo.
+    </div>
+  </div>
+</section>
+
+<footer>DataInsights &middot; run sheet generated from a live 300-client synthetic dataset, 2026-09-10 &middot; not for external distribution</footer>
+
+</div>

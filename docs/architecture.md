@@ -45,7 +45,11 @@ flowchart LR
 Dashed = not executed / access-restricted. The detector never receives
 `trigger_events.csv` — only `evaluation/evaluate.py` reads it, and that
 module is deliberately separate code, run separately, per the leakage
-boundary described below.
+boundary described below. This diagram covers the endogenous
+(transaction-based) pipeline only — see "Second pipeline: exogenous
+(external) events" below for the parallel market/political-event path,
+and `docs/artifacts/pipeline-blueprint.html` for a presentation-oriented
+version of this same diagram.
 
 ## Configured source -> canonical batches -> detection -> ranking -> narrative -> digest
 
@@ -90,6 +94,47 @@ Orchestration (`datainsights/runner.py`, invoked via `datainsights/cli.py`)
 is the single run-once entry point — the same function a future scheduler
 or service wrapper would call. It's a thin composition of the pieces
 above, not a framework.
+
+## Second pipeline: exogenous (external) events
+
+Everything above reacts to a client's **own** transaction data — an
+endogenous signal. `external_events/` runs a parallel pipeline that
+reacts to **external** market/political/industry events instead, matched
+to clients by sector and country rather than by transaction pattern:
+
+```
+SimulatedExternalEventSource   (datainsights/sources/external_event_source.py)
+  -> detection_engine/external_macro_event.py   (sector/country match + cooldown)
+  -> datainsights/ranking.py::rank_macro()      (severity-based, shares the
+                                                  same magnitude+recency shape
+                                                  as rank(), different inputs)
+  -> datainsights/narrative/macro_narrator.py   (same validate-or-template-
+                                                  fallback pattern, hedged-
+                                                  language validator instead
+                                                  of a numeric-consistency one)
+  -> datainsights/digest.py                     (same digest renderer, generalized
+                                                  to accept either detector family)
+```
+
+Each simulated event type carries the real free API it maps to (ECB SDMX,
+TED, Eurostat, EU sanctions list/OpenSanctions, EUR-Lex, GDELT, EM-DAT) and
+a `source_context` field naming that source's actual shape — structured/
+real-time vs. lagged vs. needs LLM extraction first — so a reviewer sees
+the honest limitation of each real source, not just its name. Run:
+`python -m external_events.demo_scenario`. Full catalog and compliance
+notes: `external_events/README.md`,
+[`docs/compliance_and_industry_context.md`](compliance_and_industry_context.md).
+
+## Unification: the RM worklist
+
+Both pipelines write detections into the same `var/state.sqlite`, but an
+RM doesn't want two separate lists. `datainsights/worklist.py` reads both,
+tags every row with one of six categories (`FINANCING_NEED`,
+`TREASURY_OPPORTUNITY`, `RISK_REVIEW`, `ADVISORY_ONLY`, `HEDGING_NEED`,
+`CAPEX_FINANCING`), and writes one row-per-client CSV — client profile +
+recommended action + category + evidence, ranked. Run:
+`python -m datainsights.build_worklist`. Category definitions and real
+counts from a live run: `docs/artifacts/output-reference.html`.
 
 ## Config / profile system
 
@@ -186,6 +231,22 @@ cached rerun dropped from ~60s to ~7s for 15 narratives).
   understandable vertical slice" — a second detector should reuse the same
   `DataSource`/ranking/narrative machinery once this one is trusted, not
   trigger a rewrite.
+
+## Local machine vs. Snowflake — what actually changes
+
+Everything above runs today on a single MacBook: DuckDB over local CSVs,
+SQLite for state, local Ollama for narrative/judge — no server process,
+no account, no credentials. Swapping in Snowflake later changes exactly
+one box in the diagram (`SnowflakeSource` implementing the same
+`DataSource` ABC as `OfflineLocalSource`) — detection, ranking, narrative,
+and worklist code do not change, per the config/profile system above.
+What Snowflake would add that local can't: a shared/concurrent data
+store, `External Access Integration` for pulling real external-event APIs
+server-side, Iceberg/Glue catalog integration for AWS-side tables without
+moving data. See `docs/artifacts/deployment-options.html` for the full
+three-way comparison (MacBook / Snowflake+Glue / Kiro-as-dev-client) with
+exactly where ML/statistical/LLM logic sits in each, and
+`docs/snowflake_setup.md` for the actual account setup steps.
 
 ## Known gaps (see also `docs/current_state.md`)
 

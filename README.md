@@ -20,6 +20,7 @@ for why, and how the synthetic data is grounded in public statistics instead.
 - [Snowflake Setup](docs/snowflake_setup.md) — step-by-step: warehouse, DDL, data load, credentials
 - [Architecture](docs/architecture.md) — system design, data flow diagram, component map, design decisions
 - [Current State](docs/current_state.md) — what's verified working vs. NOT RUN vs. not built
+- [Demo Run Sheet](docs/artifacts/demo-run-sheet.html) — live-demo script: what to say and run, in order
 
 ## Status
 

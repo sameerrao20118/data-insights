@@ -14,6 +14,7 @@ conversation and want to republish/update them.
 | `deployment-options.html` | Three deployment paths compared: MacBook, Snowflake+Glue/Iceberg, and why "Kiro-hosted" isn't an independent architecture |
 | `first-to-notice-pitch.html` | The sponsor-facing pitch: business problem, inputs, RM-facing output, profit/trust benefits |
 | `output-reference.html` | Raw CSV/markdown output snapshots and the six category-tag definitions, for a technical audience |
+| `demo-run-sheet.html` | Step-by-step live-demo script: what to say and what to run, in order, covering architecture, statistical/rule/LLM logic, both event categories, and local-vs-Snowflake |
 
-Generated 2026-09-05 from a synthetic 300-client proof-of-concept dataset.
+Generated 2026-09-05 (updated 2026-09-10) from a synthetic 300-client proof-of-concept dataset.
 No real client, transaction, or event data is represented in any of them.
