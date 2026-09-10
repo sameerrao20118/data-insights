@@ -97,3 +97,4 @@ Replay/monitor mode with real checkpoints (project instructions §10.1),
 then a coding-process benchmark (§9). Wire Snowflake yourself when ready
 (`config/profiles/snowflake_trial_ollama.yaml` documents the env vars) —
 the detector code won't need to change.
+# data-insights
