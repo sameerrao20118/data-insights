@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "WebSearch"
+    ],
+    "deny": [
+      "Read(**/protected_evaluator_only/**)",
+      "Glob(**/protected_evaluator_only/**)",
+      "Grep(**/protected_evaluator_only/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command // empty' | { read -r cmd; if echo \"$cmd\" | grep -qiE 'protected_evaluator_only|trigger_events\\.csv'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Blocked: command references protected ground-truth evaluation data (protected_evaluator_only/trigger_events.csv). The coding agent must never read this — see CLAUDE.md.\"}}'; else echo '{}'; fi; }",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
