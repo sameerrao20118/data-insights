@@ -68,6 +68,18 @@ python -m external_events.demo_scenario      # exogenous-event pipeline demo
 python -m pytest tests/ -v                   # detector test suite (16 cases)
 ```
 
+## Demo dashboard (recommended over the CLI for showing this to someone)
+
+```bash
+streamlit run dashboard/app.py
+```
+
+A local, mostly-read-only Streamlit viewer over the same files/modules the
+CLI above uses — data sources (internal + simulated external, with the
+real-API mapping), pipeline run buttons, the filterable worklist, digests,
+and a technique reference (where statistical/rule-based/LLM logic sits).
+See `docs/user_guide.md` section 6d.
+
 ## Generate the dataset
 
 ```bash

@@ -169,7 +169,8 @@ footer{margin-top:50px; padding-top:20px; border-top:1px solid var(--rule);
   <a href="#step5"><b>05</b>Local now vs Snowflake later</a>
   <a href="#step6"><b>06</b>Run it — setup check</a>
   <a href="#step7"><b>07</b>Run it — both pipelines</a>
-  <a href="#step8"><b>08</b>What to point at</a>
+  <a href="#step8"><b>08</b>Show it — the dashboard</a>
+  <a href="#step9"><b>09</b>What to point at</a>
 </nav>
 
 <section class="step" id="step1">
@@ -340,6 +341,31 @@ python -m datainsights.build_worklist          <span class="out"># unify both in
 
 <section class="step" id="step8">
   <div class="num">08</div>
+  <div>
+    <h2>Show it — the dashboard, not the terminal</h2>
+    <p class="role">This is what to actually have on screen while presenting</p>
+    <pre class="cmd">streamlit run dashboard/app.py   <span class="out"># opens localhost:8501</span></pre>
+    <p>A local Streamlit viewer over the same files/modules above — Overview, Data sources
+    (real previews of both internal CSVs and simulated external events, plus the local-vs-
+    Snowflake comparison), Run the pipeline (buttons for the same commands as step 7), the
+    filterable Worklist with a per-recommendation detail view, Digests, and a Technique
+    reference. Everything except the run buttons works read-only against whatever's already
+    in <span class="mono">var/</span> — no need to click "run" first if you've already done step 7.</p>
+    <div class="say">
+      <span class="lbl">say</span>
+      A CLI transcript proves the pipeline ran. This is what an RM or a platform reviewer
+      would actually look at — filter by category, click into one recommendation, see the
+      evidence behind it.
+    </div>
+    <div class="refs">
+      <a href="dashboard/app.py">dashboard/app.py</a>
+      <a href="docs/user_guide.md">docs/user_guide.md — section 6d</a>
+    </div>
+  </div>
+</section>
+
+<section class="step" id="step9">
+  <div class="num">09</div>
   <div>
     <h2>What to point at once it's done</h2>
     <p class="role">The actual output, from a real run of this dataset</p>

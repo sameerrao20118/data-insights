@@ -151,6 +151,28 @@ for real column-by-column examples and what each category means.
 **Or run everything above in one shot:** `./run_demo.sh` — tests, both
 pipelines, evaluation, and the worklist, in sequence.
 
+## 6d. The demo dashboard (recommended for showing this to someone)
+
+A CLI transcript is a poor way to show someone where the data comes from
+and what the output looks like. `dashboard/app.py` is a local Streamlit
+viewer over the exact same files and modules the CLI steps above use —
+no new detection/ranking/narrative logic lives in it.
+
+```bash
+streamlit run dashboard/app.py
+```
+
+Opens at `http://localhost:8501`. Sections: Overview, Data sources (real
+previews of both the internal CSVs and the simulated external events,
+plus the local-vs-Snowflake comparison), Run the pipeline (buttons that
+call the same modules as Step 4/6b/6c), Worklist (filterable, with a
+per-recommendation detail view), Digests, Technique reference (where
+statistical/rule-based/LLM logic sits), and Status. Everything on the
+Data sources / Worklist / Digests / Status tabs works read-only against
+whatever's already in `var/` and `data_generator/output/` — you don't
+have to click "run" first. This is a demo viewer, not the RM review/
+tracking system named as a future gap in `docs/gap_analysis.md`.
+
 ## 7. Wiring Snowflake (optional, when you're ready)
 
 This is a 9-step, click-by-click walkthrough — creating the warehouse/
