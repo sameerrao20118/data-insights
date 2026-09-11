@@ -8,15 +8,24 @@ either event category.
 
 from __future__ import annotations
 
+import math
+
 from datainsights.narrative.macro_evidence import MacroEvidencePacket
 
 
 def render(evidence: MacroEvidencePacket) -> dict:
+    has_value = evidence.estimated_value_eur is not None and not (
+        isinstance(evidence.estimated_value_eur, float) and math.isnan(evidence.estimated_value_eur)
+    )
+    value_clause = (
+        f" This event carries a simulated estimated value of €{evidence.estimated_value_eur:,.0f}."
+        if has_value else ""
+    )
     observed_facts = (
         f"On {evidence.event_date}, an external event was recorded: \"{evidence.headline}\" "
         f"(source: {evidence.source_name}, severity {evidence.severity}/5, "
-        f"{evidence.direction} direction). Client {evidence.client_id} matches this event's "
-        f"scope by sector/country."
+        f"{evidence.direction} direction).{value_clause} Client {evidence.client_id} matches "
+        f"this event's scope by sector/country."
     )
     interpretation = (
         "This client's sector and/or country overlaps the event's scope. This does not "

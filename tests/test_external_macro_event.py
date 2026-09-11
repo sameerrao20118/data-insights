@@ -27,6 +27,7 @@ def make_event(event_id, event_date, sector="", country="", severity=4, directio
         "source_name": "test", "real_source_type": "test", "source_context": "test",
         "affected_country": country,
         "affected_sector": sector, "direction": direction, "severity": severity,
+        "estimated_value_eur": None,
         "headline": "h", "description": "d",
     }
 

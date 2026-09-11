@@ -80,7 +80,9 @@ def main(max_narratives: int = 8, generate_narratives: bool = True):
                 real_source_type=row["real_source_type"], source_context=row["source_context"],
                 affected_country=row["affected_country"],
                 affected_sector=row["affected_sector"], direction=row["direction"],
-                severity=int(row["severity"]), headline=row["headline"], description=row["description"],
+                severity=int(row["severity"]),
+                estimated_value_eur=(None if pd.isna(row["estimated_value_eur"]) else float(row["estimated_value_eur"])),
+                headline=row["headline"], description=row["description"],
                 rank=int(row["rank"]), score=float(row["score"]), allowed_actions=ALLOWED_ACTIONS_MACRO,
             )
             cache_key = evidence.evidence_hash()
@@ -108,7 +110,8 @@ def main(max_narratives: int = 8, generate_narratives: bool = True):
                     f"- **Severity:** {row['severity']}/5 · **Direction:** {row['direction']}",
                     f"- **Scope:** sector={row['affected_sector'] or 'any'}, "
                     f"country={row['affected_country'] or 'EU-wide'}",
-                ],
+                ] + ([f"- **Estimated event value:** €{row['estimated_value_eur']:,.0f} (simulated)"]
+                     if pd.notna(row["estimated_value_eur"]) else []),
             })
 
         print(f"{narratives_generated} narrative(s) generated this run "

@@ -42,8 +42,14 @@ interface; nothing in `detection_engine/external_macro_event.py`,
 
 `ExternalEventSource.read_events()` must return rows with the columns in
 `REQUIRED_COLUMNS` (event_id, event_date, event_type, source_name,
-real_source_type, affected_country, affected_sector, direction, severity,
-headline, description) — already-structured, joinable data. That
+real_source_type, source_context, affected_country, affected_sector,
+direction, severity, estimated_value_eur, headline, description) —
+already-structured, joinable data. `estimated_value_eur` is populated only
+for `public_tender_award` and `natural_disaster` — the two types whose
+real source (TED, EM-DAT) actually publishes a monetary figure per record
+(contract award value; estimated damage). It's NaN for every other type on
+purpose, not a gap to fill in: a rate move or a sanctions update has no
+natural single "value" the way a tender or a disaster does. That
 requirement forces a design decision the conversation settled explicitly:
 
 - **Structured sources** (ECB, TED, Eurostat, EU sanctions, EM-DAT) map
@@ -59,6 +65,20 @@ requirement forces a design decision the conversation settled explicitly:
   already-structured rows either way. Building it is future work, flagged
   deliberately rather than attempted now (see `docs/gap_analysis.md`);
   start with a structured source if you pick this up, not GDELT.
+
+## Sizing a concrete offer from an event
+
+`datainsights/worklist.py::size_macro_action()` turns `estimated_value_eur`
+(and the client's own `annual_revenue_eur_est` from `clients.csv`) into a
+concrete, sized `recommended_action` for every matched client — not just
+the handful that get a full LLM narrative. E.g. a tender worth €X becomes
+a working-capital offer of ~25% of €X, capped at a multiple of the
+client's own revenue so a large regional event doesn't produce an
+implausible ask against a small client's scale. Every percentage is
+**stated inline as "illustrative"** — these are planning heuristics this
+build chose, not benchmarks derived from real conversion data, and the
+function's own docstring says so. Revisit them the moment real
+accept/reject outcomes exist to calibrate against.
 
 ## What this deliberately does NOT claim
 

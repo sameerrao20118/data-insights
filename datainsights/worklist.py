@@ -76,6 +76,60 @@ def categorize_macro_event(event_type: str, direction: str) -> str:
     return "ADVISORY_ONLY"
 
 
+# Illustrative sizing heuristics -- NOT derived from real conversion data or
+# real benchmark statistics. Each recommended_action below states its basis
+# inline (event-level simulated value, or a named % of the client's own
+# revenue) so an RM can see exactly what's a hard number vs. a planning
+# rule-of-thumb, never presented as more certain than that. Revisit these
+# the moment real accept/reject outcomes exist to calibrate against
+# (see docs/gap_analysis.md).
+REVENUE_PCT_HEURISTIC = {
+    # (event_type, direction) -> (pct_of_revenue, purpose phrase)
+    ("rate_policy_change", "positive"): (0.15, "a financing-lines review (cheaper borrowing)"),
+    ("rate_policy_change", "negative"): (0.10, "a short-term deposit/investment placement (rates rising)"),
+    ("commodity_energy_shock", "negative"): (0.12, "an FX/commodity hedge notional (energy cost exposure)"),
+    ("eu_regulatory_change", "negative"): (0.08, "compliance-related capex financing"),
+}
+TENDER_ADVANCE_PCT = 0.25       # working-capital advance as a % of tender value
+DISASTER_REVENUE_CAP_MULT = 1.5  # cap recovery financing at this multiple of revenue,
+                                  # so a large regional damage estimate doesn't produce
+                                  # an implausible ask against a small client's scale
+TENDER_REVENUE_CAP_MULT = 2.0
+
+
+def size_macro_action(event_type: str, direction: str, estimated_value_eur: float | None,
+                       annual_revenue_eur_est: float | None) -> str | None:
+    """A concrete, sized recommended action for a macro-event row, or None
+    if this event type has no sizing rule (falls back to the narrative's
+    own suggested_action, or the generic placeholder)."""
+    has_value = estimated_value_eur is not None and pd.notna(estimated_value_eur)
+    has_revenue = annual_revenue_eur_est is not None and pd.notna(annual_revenue_eur_est)
+
+    if event_type == "public_tender_award" and has_value:
+        amount = TENDER_ADVANCE_PCT * estimated_value_eur
+        if has_revenue:
+            amount = min(amount, TENDER_REVENUE_CAP_MULT * annual_revenue_eur_est)
+        return (f"Offer working-capital financing of ~€{amount:,.0f} "
+                f"({TENDER_ADVANCE_PCT:.0%} of the €{estimated_value_eur:,.0f} tender value, "
+                f"illustrative) to bridge delivery before payment.")
+
+    if event_type == "natural_disaster" and has_value:
+        amount = estimated_value_eur
+        if has_revenue:
+            amount = min(amount, DISASTER_REVENUE_CAP_MULT * annual_revenue_eur_est)
+        return (f"Offer recovery/working-capital financing of up to ~€{amount:,.0f} "
+                f"(estimated regional damage €{estimated_value_eur:,.0f}, illustrative) "
+                f"to help restore operations.")
+
+    heuristic = REVENUE_PCT_HEURISTIC.get((event_type, direction))
+    if heuristic and has_revenue:
+        pct, purpose = heuristic
+        amount = pct * annual_revenue_eur_est
+        return f"Offer {purpose}: up to ~€{amount:,.0f} ({pct:.0%} of estimated annual revenue, illustrative)."
+
+    return None
+
+
 def _load_transaction_rows(state_path: str) -> list[dict]:
     con = sqlite3.connect(state_path)
     df = pd.read_sql_query(
@@ -92,7 +146,9 @@ def _load_transaction_rows(state_path: str) -> list[dict]:
             "rank": r["rank"], "score": r["score"], "client_id": r["client_id"],
             "category": TRANSACTION_RULE_CATEGORY.get(r["rule_version"], "ADVISORY_ONLY"),
             "event_type": r["rule_version"],
-            "recommended_action": narrative["suggested_action"] if narrative else "(no narrative generated)",
+            "recommended_action": narrative["suggested_action"] if narrative else
+                f"Client received €{r['flagged_amount']:,.0f} on {r['event_date']} -- review "
+                f"for a short-term deposit/investment placement (real transaction amount).",
             "evidence_summary": f"{r['flagged_amount']:,.2f} flagged on {r['event_date']} "
                                 f"(detection {r['detection_id']})",
             "event_date": r["event_date"], "detection_id": r["detection_id"],
@@ -134,7 +190,8 @@ def build_worklist(clients_csv_path: str, transaction_state_path: str | None = N
                     macro_state_path: str | None = None,
                     external_events_csv_path: str | None = None) -> pd.DataFrame:
     clients = pd.read_csv(clients_csv_path)[
-        ["client_id", "legal_name", "segment", "sector", "country", "relationship_manager_id"]
+        ["client_id", "legal_name", "segment", "sector", "country",
+         "relationship_manager_id", "annual_revenue_eur_est"]
     ]
 
     all_rows = []
@@ -147,11 +204,19 @@ def build_worklist(clients_csv_path: str, transaction_state_path: str | None = N
             event_id = row.pop("transaction_id")
             ev = events.loc[event_id]
             row["category"] = categorize_macro_event(ev["event_type"], ev["direction"])
+            has_value = pd.notna(ev["estimated_value_eur"])
+            value_clause = f", est. value €{ev['estimated_value_eur']:,.0f}" if has_value else ""
             row["evidence_summary"] = (
-                f"{ev['event_type']} (severity {ev['severity']}/5, {ev['direction']}) on "
+                f"{ev['event_type']} (severity {ev['severity']}/5, {ev['direction']}{value_clause}) on "
                 f"{row['event_date']}: \"{ev['headline']}\" [{ev['real_source_type']} -- "
                 f"{ev['source_context']}]"
             )
+            # carried through to the sizing pass below (after the client
+            # merge, since sizing needs annual_revenue_eur_est), then
+            # dropped by the final WORKLIST_COLUMNS projection
+            row["_macro_event_type"] = ev["event_type"]
+            row["_direction"] = ev["direction"]
+            row["_estimated_value_eur"] = ev["estimated_value_eur"] if has_value else None
             all_rows.append(row)
 
     if not all_rows:
@@ -159,6 +224,18 @@ def build_worklist(clients_csv_path: str, transaction_state_path: str | None = N
 
     df = pd.DataFrame(all_rows)
     df = df.merge(clients, on="client_id", how="left")
+
+    if "_macro_event_type" in df.columns:
+        def _sized_action(r):
+            if pd.isna(r["_macro_event_type"]):
+                return r["recommended_action"]
+            sized = size_macro_action(
+                r["_macro_event_type"], r["_direction"], r["_estimated_value_eur"],
+                r.get("annual_revenue_eur_est"),
+            )
+            return sized or r["recommended_action"]
+        df["recommended_action"] = df.apply(_sized_action, axis=1)
+
     df = df.sort_values("score", ascending=False).reset_index(drop=True)
     df["rank"] = df.index + 1  # re-rank across the COMBINED worklist, not
                                  # each source's own internal rank

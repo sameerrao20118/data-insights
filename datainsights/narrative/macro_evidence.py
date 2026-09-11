@@ -27,6 +27,7 @@ class MacroEvidencePacket:
     affected_sector: str
     direction: str
     severity: int
+    estimated_value_eur: float | None
     headline: str
     description: str
     rank: int

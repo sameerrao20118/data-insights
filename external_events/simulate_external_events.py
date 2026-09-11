@@ -63,6 +63,12 @@ EVENT_TYPE_CATALOG = {
         "country_scope": "single_country",
         "severity_range": (2, 5),
         "p_negative": 0.05,  # a tender award is almost always an opportunity
+        # real TED notices publish a contract award value -- simulate one,
+        # scaled by severity, so downstream sizing has something concrete
+        # to anchor to instead of a bare 1-5 score. Illustrative bands, not
+        # derived from real tender-value statistics.
+        "value_range_eur_by_severity": {2: (100_000, 800_000), 3: (300_000, 2_000_000),
+                                          4: (800_000, 4_000_000), 5: (2_000_000, 8_000_000)},
     },
     "commodity_energy_shock": {
         "source_name": "Eurostat energy price index update (simulated)",
@@ -116,6 +122,11 @@ EVENT_TYPE_CATALOG = {
         "country_scope": "single_country",
         "severity_range": (3, 5),
         "p_negative": 0.95,
+        # real EM-DAT records carry an estimated-damage figure -- simulate
+        # one the same way, scaled by severity. Illustrative bands, not
+        # derived from real disaster-loss statistics.
+        "value_range_eur_by_severity": {3: (50_000, 500_000), 4: (300_000, 1_500_000),
+                                          5: (1_000_000, 4_000_000)},
     },
 }
 
@@ -130,12 +141,27 @@ HEADLINE_TEMPLATES = {
 }
 
 
+def _sample_value_eur(event_type: str, severity: int) -> float | None:
+    """Simulated monetary magnitude for event types whose real source
+    publishes one (TED contract value, EM-DAT estimated damage) -- None
+    for types where the real source has no natural single value field
+    (a rate move or a sanctions update isn't "worth" an amount the way a
+    tender or a disaster is)."""
+    spec = EVENT_TYPE_CATALOG[event_type]
+    bands = spec.get("value_range_eur_by_severity")
+    if not bands:
+        return None
+    low, high = bands[severity]
+    return round(float(rng.uniform(low, high)), 2)
+
+
 def _sample_event(event_id: int, event_date_: date, event_type: str) -> dict:
     spec = EVENT_TYPE_CATALOG[event_type]
     sector = rng.choice(spec["sectors"]) if spec["sectors"] else None
     country = rng.choice(COUNTRIES) if spec["country_scope"] == "single_country" else None
     severity = int(rng.integers(spec["severity_range"][0], spec["severity_range"][1] + 1))
     direction = "negative" if rng.random() < spec["p_negative"] else "positive"
+    estimated_value_eur = _sample_value_eur(event_type, severity)
 
     # action word MUST be derived from direction, not sampled independently
     # of it -- otherwise a headline can say "cut" while direction says
@@ -169,6 +195,7 @@ def _sample_event(event_id: int, event_date_: date, event_type: str) -> dict:
         "affected_sector": sector if sector else "",
         "direction": direction,
         "severity": severity,
+        "estimated_value_eur": estimated_value_eur if estimated_value_eur is not None else "",
         "headline": headline,
         "description": f"Synthetic event for POC simulation. {headline}. "
                        f"Not derived from any real 2023-2025 occurrence.",
@@ -178,32 +205,32 @@ def _sample_event(event_id: int, event_date_: date, event_type: str) -> dict:
 # Hand-authored scenario events -- specific, dated, narrative-rich, used by
 # external_events/demo_scenario.py to demonstrate the pipeline concretely.
 SCENARIO_EVENTS = [
-    (date(2023, 8, 15), "commodity_energy_shock", "Energy & Utilities", None, "negative", 5,
+    (date(2023, 8, 15), "commodity_energy_shock", "Energy & Utilities", None, "negative", 5, None,
      "European natural gas benchmark price spikes 40% amid supply disruption",
      "Synthetic scenario event. A sustained spike in European gas benchmark prices raises "
      "input costs across energy-intensive sectors and increases hedging demand for exposed "
      "manufacturers and utilities. Not derived from any real occurrence."),
-    (date(2024, 3, 5), "public_tender_award", "Construction", "PL", "positive", 4,
+    (date(2024, 3, 5), "public_tender_award", "Construction", "PL", "positive", 4, 2_400_000.0,
      "Poland awards large public infrastructure tender in the construction sector",
      "Synthetic scenario event. A national infrastructure tender is awarded, creating "
      "working-capital and trade-finance needs for the winning sector's suppliers. Not "
      "derived from any real occurrence."),
-    (date(2024, 6, 20), "geopolitical_disruption", "Transportation & Logistics", "IT", "negative", 5,
+    (date(2024, 6, 20), "geopolitical_disruption", "Transportation & Logistics", "IT", "negative", 5, None,
      "Mediterranean shipping route disruption raises freight costs and delivery risk",
      "Synthetic scenario event. Extended transit times and elevated freight/insurance costs "
      "affect logistics-dependent clients trading through the affected corridor. Not derived "
      "from any real occurrence."),
-    (date(2024, 11, 10), "rate_policy_change", None, None, "positive", 3,
+    (date(2024, 11, 10), "rate_policy_change", None, None, "positive", 3, None,
      "ECB cuts policy rate by 25 bps amid easing inflation",
      "Synthetic scenario event. A rate cut reduces loan servicing costs and typically "
      "narrows deposit yields, shifting relative attractiveness between credit and treasury "
      "products EU-wide. Not derived from any real occurrence."),
-    (date(2025, 2, 18), "natural_disaster", "Agriculture & Food Production", "ES", "negative", 4,
+    (date(2025, 2, 18), "natural_disaster", "Agriculture & Food Production", "ES", "negative", 4, 850_000.0,
      "Severe drought conditions affect agricultural output in southern Spain",
      "Synthetic scenario event. Reduced yields and higher input costs strain working "
      "capital for agriculture-sector clients in the affected region. Not derived from any "
      "real occurrence."),
-    (date(2025, 7, 2), "sanctions_regulatory_change", None, None, "negative", 4,
+    (date(2025, 7, 2), "sanctions_regulatory_change", None, None, "negative", 4, None,
      "EU tightens export controls affecting trade with a non-EU partner country",
      "Synthetic scenario event. Clients with counterparty exposure to the affected "
      "jurisdiction face elevated compliance and settlement friction. Not derived from any "
@@ -213,7 +240,7 @@ SCENARIO_EVENTS = [
 
 def gen_scenario_events(start_id: int) -> list[dict]:
     rows = []
-    for i, (d, etype, sector, country, direction, severity, headline, desc) in enumerate(SCENARIO_EVENTS):
+    for i, (d, etype, sector, country, direction, severity, value_eur, headline, desc) in enumerate(SCENARIO_EVENTS):
         rows.append({
             "event_id": f"EVT{start_id + i:05d}",
             "event_date": d.isoformat(),
@@ -225,6 +252,7 @@ def gen_scenario_events(start_id: int) -> list[dict]:
             "affected_sector": sector or "",
             "direction": direction,
             "severity": severity,
+            "estimated_value_eur": value_eur if value_eur is not None else "",
             "headline": headline,
             "description": desc,
         })

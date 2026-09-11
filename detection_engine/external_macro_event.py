@@ -28,7 +28,7 @@ DETECTION_COLUMNS = [
     "detection_id", "rule_version", "client_id", "event_id", "event_date",
     "detection_as_of", "event_type", "source_name", "real_source_type",
     "source_context", "affected_country", "affected_sector", "direction", "severity",
-    "headline", "description", "status",
+    "estimated_value_eur", "headline", "description", "status",
 ]
 
 RULE_VERSION = "external_macro_event.v1"
@@ -77,6 +77,7 @@ def detect(events: pd.DataFrame, clients: pd.DataFrame, config: MacroDetectorCon
                 "affected_sector": ev["affected_sector"],
                 "direction": ev["direction"],
                 "severity": int(ev["severity"]),
+                "estimated_value_eur": ev["estimated_value_eur"],
                 "headline": ev["headline"],
                 "description": ev["description"],
                 "status": "detected",

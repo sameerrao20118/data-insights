@@ -9,6 +9,8 @@ claim than the evidence supports).
 from __future__ import annotations
 
 import json
+import math
+import re
 import urllib.error
 import urllib.request
 
@@ -34,7 +36,9 @@ SYSTEM_PROMPT = (
     "the event's scope -- NOT that this specific client is actually affected. Never claim "
     "certainty of impact; use hedged language ('may be exposed to', 'could be affected by').\n"
     "2. Never invent a financial amount, a specific mechanism of harm/benefit, or a product "
-    "recommendation beyond the three allowed actions given.\n"
+    "recommendation beyond the three allowed actions given. The ONLY financial amount you may "
+    "state is estimated_value_eur if it is present in the evidence packet -- that figure is "
+    "already verified, simulated data, not something you are inferring.\n"
     "3. This event is SYNTHETIC/simulated, not a real occurrence -- never write as if it "
     "really happened.\n"
     "4. suggested_action MUST be exactly one of the allowed actions given, verbatim.\n"
@@ -54,6 +58,7 @@ def _build_prompt(evidence: MacroEvidencePacket) -> str:
         "affected_country": evidence.affected_country or "(EU-wide)",
         "direction": evidence.direction,
         "severity_1_to_5": evidence.severity,
+        "estimated_value_eur": evidence.estimated_value_eur,
         "client_id": evidence.client_id,
         "allowed_suggested_actions": list(evidence.allowed_actions),
     }
@@ -103,6 +108,14 @@ def _validate(parsed: dict, evidence: MacroEvidencePacket) -> list[str]:
                          "which the sector/country match evidence does not support")
     if not any(p in text_blob for p in HEDGE_PHRASES):
         problems.append("narrative lacks hedged language for an unconfirmed sector/country match")
+
+    mentions_amount = bool(re.search(r"[€$£]\s?[\d,]+|\b\d[\d,]{3,}\s?(eur|euros)\b", text_blob))
+    has_value = evidence.estimated_value_eur is not None and not (
+        isinstance(evidence.estimated_value_eur, float) and math.isnan(evidence.estimated_value_eur)
+    )
+    if mentions_amount and not has_value:
+        problems.append("narrative states a financial amount but evidence carries no "
+                         "estimated_value_eur for this event -- likely invented")
     return problems
 
 
