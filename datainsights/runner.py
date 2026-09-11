@@ -17,6 +17,7 @@ from datainsights.config import Profile, load_profile
 from datainsights.narrative import ollama_narrator
 from datainsights.narrative.evidence import ALLOWED_ACTIONS, EvidencePacket
 from datainsights.sources.offline_local import OfflineLocalSource
+from datainsights.worklist import TRANSACTION_HYPOTHESIS
 from detection_engine.large_incoming_payment import DetectorConfig, apply_cooldown, detect
 
 DATASET_START = date(2023, 1, 1)
@@ -120,7 +121,10 @@ def run_once(
                 digest_items.append({
                     **row.to_dict(), "narrative": narrative,
                     "subtitle": row["account_id"],
-                    "detail_lines": [f"- **Flagged amount:** {row['flagged_amount']:,.2f} {row['currency']}"],
+                    "detail_lines": [
+                        f"- **Flagged amount:** {row['flagged_amount']:,.2f} {row['currency']}",
+                        f"- **Hypothesis:** {TRANSACTION_HYPOTHESIS}",
+                    ],
                 })
 
             notes.append(

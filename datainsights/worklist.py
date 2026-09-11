@@ -35,9 +35,69 @@ import pandas as pd
 
 WORKLIST_COLUMNS = [
     "rank", "score", "category", "client_id", "legal_name", "segment", "sector",
-    "country", "relationship_manager_id", "event_type", "recommended_action",
+    "country", "relationship_manager_id", "event_type", "hypothesis", "recommended_action",
     "evidence_summary", "event_date", "detection_id", "narrative_source",
 ]
+
+# HYPOTHESIS is the "why" behind a category, one level up from the specific
+# per-client action -- the general reasoning an RM can restate before the
+# client-specific numbers. Same event_type+direction keying as
+# categorize_macro_event(), and deliberately separate from it: this is
+# prose for a human, that's a tag for a spreadsheet filter.
+TRANSACTION_HYPOTHESIS = (
+    "A payment landing well above this client's own historical pattern usually means a "
+    "temporary cash surplus -- a short window where a treasury/deposit conversation is more "
+    "relevant than usual, before the cash moves elsewhere."
+)
+MACRO_HYPOTHESIS = {
+    ("rate_policy_change", "positive"):
+        "A policy rate cut lowers borrowing costs economy-wide -- clients with existing or "
+        "planned debt have a live reason to refinance or draw new financing now, before terms move.",
+    ("rate_policy_change", "negative"):
+        "A policy rate rise makes idle cash relatively more valuable to move -- clients have a "
+        "live reason to place surplus cash into a higher-yielding deposit/investment product "
+        "before conditions shift again.",
+    ("public_tender_award", "positive"):
+        "Winning a public tender creates a cash-flow gap between delivery and payment -- the "
+        "winner needs working capital sized to the contract, not their balance sheet, and "
+        "needs it before delivery starts, not after.",
+    ("commodity_energy_shock", "negative"):
+        "A sharp rise in energy prices raises input costs for energy-exposed sectors "
+        "immediately, before it shows up in their margins -- a hedge locks in cost certainty "
+        "while the exposure is fresh.",
+    ("commodity_energy_shock", "positive"):
+        "Falling energy prices ease cost pressure for energy-exposed sectors -- worth a "
+        "check-in, but not a clear product need on its own.",
+    ("natural_disaster", "negative"):
+        "A regional disaster creates an immediate recovery/working-capital gap for affected "
+        "clients before insurance or public relief arrives -- timing matters more than the "
+        "exact loss figure.",
+    ("eu_regulatory_change", "negative"):
+        "A new regulation that raises compliance cost typically forces equipment or process "
+        "changes on a deadline -- a capex financing need with a real timeline, not just interest.",
+    ("eu_regulatory_change", "positive"):
+        "An eased regulation removes a cost pressure -- worth flagging in a relationship "
+        "conversation, not a financing trigger on its own.",
+    ("sanctions_regulatory_change", "negative"):
+        "A tightened sanctions/export-control change creates counterparty and compliance "
+        "exposure for clients trading with the affected jurisdiction -- a risk-review trigger, "
+        "not a sales opportunity, and it should stay that way.",
+    ("sanctions_regulatory_change", "positive"):
+        "An eased sanctions/export-control change can open a market that was previously "
+        "restricted -- worth a risk-and-opportunity review together, not a standalone product pitch.",
+    ("geopolitical_disruption", "negative"):
+        "Regional instability disrupting trade routes raises delivery risk and cost for "
+        "logistics-dependent clients -- flagged for risk awareness, not sized as a product "
+        "opportunity, because the mechanism of harm is too indirect to price honestly.",
+}
+
+
+def macro_hypothesis(event_type: str, direction: str) -> str:
+    return MACRO_HYPOTHESIS.get(
+        (event_type, direction),
+        "This event's sector/country overlaps the client's profile -- reviewed for relevance, "
+        "no specific financing hypothesis applies to this event type/direction combination yet.",
+    )
 
 # large_incoming_payment always suggests the same commercial angle: a
 # client's own cash just moved in a way that suggests a treasury/lending
@@ -146,6 +206,7 @@ def _load_transaction_rows(state_path: str) -> list[dict]:
             "rank": r["rank"], "score": r["score"], "client_id": r["client_id"],
             "category": TRANSACTION_RULE_CATEGORY.get(r["rule_version"], "ADVISORY_ONLY"),
             "event_type": r["rule_version"],
+            "hypothesis": TRANSACTION_HYPOTHESIS,
             "recommended_action": narrative["suggested_action"] if narrative else
                 f"Client received €{r['flagged_amount']:,.0f} on {r['event_date']} -- review "
                 f"for a short-term deposit/investment placement (real transaction amount).",
@@ -204,6 +265,7 @@ def build_worklist(clients_csv_path: str, transaction_state_path: str | None = N
             event_id = row.pop("transaction_id")
             ev = events.loc[event_id]
             row["category"] = categorize_macro_event(ev["event_type"], ev["direction"])
+            row["hypothesis"] = macro_hypothesis(ev["event_type"], ev["direction"])
             has_value = pd.notna(ev["estimated_value_eur"])
             value_clause = f", est. value €{ev['estimated_value_eur']:,.0f}" if has_value else ""
             row["evidence_summary"] = (

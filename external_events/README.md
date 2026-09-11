@@ -66,6 +66,20 @@ requirement forces a design decision the conversation settled explicitly:
   deliberately rather than attempted now (see `docs/gap_analysis.md`);
   start with a structured source if you pick this up, not GDELT.
 
+## Stating the hypothesis, not just the action
+
+Every worklist row and every digest entry now carries a `hypothesis` line
+(`datainsights/worklist.py::macro_hypothesis()` /
+`TRANSACTION_HYPOTHESIS`) -- one sentence stating *why* this event/
+direction combination implies this kind of need, one level up from the
+specific per-client number below it. E.g. "a policy rate cut lowers
+borrowing costs economy-wide -- clients with existing or planned debt have
+a live reason to refinance..." An RM can restate the hypothesis before
+getting to the client-specific figure, instead of the worklist just
+asserting a number with no reasoning attached. Same honesty rule as
+sizing: these are this build's stated reasoning, not a validated causal
+claim.
+
 ## Sizing a concrete offer from an event
 
 `datainsights/worklist.py::size_macro_action()` turns `estimated_value_eur`

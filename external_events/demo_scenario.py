@@ -19,6 +19,7 @@ from datainsights import ranking, state
 from datainsights.narrative import macro_narrator
 from datainsights.narrative.macro_evidence import ALLOWED_ACTIONS_MACRO, MacroEvidencePacket
 from datainsights.sources.external_event_source import SimulatedExternalEventSource
+from datainsights.worklist import macro_hypothesis
 from detection_engine.external_macro_event import MacroDetectorConfig, apply_cooldown, detect
 
 AS_OF = date(2025, 12, 31)
@@ -110,6 +111,7 @@ def main(max_narratives: int = 8, generate_narratives: bool = True):
                     f"- **Severity:** {row['severity']}/5 · **Direction:** {row['direction']}",
                     f"- **Scope:** sector={row['affected_sector'] or 'any'}, "
                     f"country={row['affected_country'] or 'EU-wide'}",
+                    f"- **Hypothesis:** {macro_hypothesis(row['event_type'], row['direction'])}",
                 ] + ([f"- **Estimated event value:** €{row['estimated_value_eur']:,.0f} (simulated)"]
                      if pd.notna(row["estimated_value_eur"]) else []),
             })
