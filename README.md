@@ -21,6 +21,7 @@ for why, and how the synthetic data is grounded in public statistics instead.
 - [Architecture](docs/architecture.md) — system design, data flow diagram, component map, design decisions
 - [Current State](docs/current_state.md) — what's verified working vs. NOT RUN vs. not built
 - [Demo Run Sheet](docs/artifacts/demo-run-sheet.html) — live-demo script: what to say and run, in order
+- [Project Context (condensed handoff)](docs/PROJECT_CONTEXT.md) — single-file summary for pasting into a Claude session that can't see this repo (e.g. a restricted corporate environment)
 
 ## Status
 
