@@ -165,7 +165,100 @@ This hypothesis + sizing logic is written into the actual pipeline output
 (the worklist CSV and every RM digest), not produced ad hoc — every one of
 ~3,000 rows in a real run carries both fields automatically.
 
-## 7. Current state — what's actually verified vs. not
+## 7. Inputs and outputs — what feeds in, what comes out
+
+### 7.1 Endogenous inputs, organized by banking domain
+
+A real deployment's endogenous (a client's own data) inputs map to five
+core banking domains. This project's synthetic dataset already models
+data for all five; only the **Deposits** domain has a detector built on
+top of it today — the other four are real data, waiting for a detector,
+not a gap in the data itself.
+
+| Domain | Typical real source system | Signal it carries | Status in this build |
+|---|---|---|---|
+| **1. Deposits** | Core banking / current account ledger | Account balances, incoming/outgoing payments, deposit concentration, account opening/closure | **Detector built**: `large_incoming_payment` reads `accounts.csv` / `balances.csv` / `transactions.csv`. Real trigger types not yet built: treasury cash buildup, dormancy, recurring-revenue change. |
+| **2. Lending** | Loan origination / credit facility system | Facility limits, utilization rate, drawdowns, repayment schedule, covenant status, maturity dates | Data exists (`facilities.csv`: loans, credit lines, trade finance, guarantees) — **no detector reads it yet**. Real trigger types not yet built: credit utilization spike, facility maturity approaching, covenant breach risk. |
+| **3. Balance sheet management (treasury/ALM)** | Treasury/ALM system, group consolidation | FX exposure by currency, liquidity ratios, group-level cash position, intercompany flows, currency mismatch | Data exists (`entity_groups.csv` group hierarchy, multi-currency fields on accounts/transactions) — **no detector reads it yet**. |
+| **4. Risk** | Internal credit risk rating system, covenant monitoring | Annual internal risk rating, rating migration, sector/country concentration, counterparty concentration | Data exists (`risk_ratings.csv`, annual rating per client) — **no detector reads it yet**. Real trigger types not yet built: rating downgrade, counterparty concentration. |
+| **5. Economic crime (fraud & financial crime)** | AML transaction monitoring, sanctions/PEP screening, KYC system | PEP status, sanctions screening status/date, high-risk-counterparty-jurisdiction flags, unusual transaction patterns | Data exists (`pep_flag`, `sanctions_screening_status`, `last_screening_date` on `clients.csv`; `high_risk_counterparty_flag`, `counterparty_country` on `transactions.csv`) — **deliberately no detector**, see note below. |
+
+**Why domain 5 has no detector, on purpose, not by oversight**: this
+project is an NBA/EBM (sales-facing) system. Financial-crime detection is
+a different accountable function (FinCrime/AML) in a real bank, with its
+own governance, escalation path, and regulatory obligations — bolting an
+AML trigger onto a sales worklist would blur that accountability even
+though the raw fields happen to sit in the same tables. This project also
+already documented a hard boundary (§2, and `docs/compliance_and_industry_context.md`)
+against ever correlating a `pep_flag` with a political/geopolitical
+exogenous event type, precisely because that specific combination is
+where a currently-defensible design would stop being one. If a real
+FinCrime detector is ever built from this same data, it should be a
+separate system with its own review path, not an extension of this one.
+
+### 7.2 Exogenous inputs — real source catalog
+
+Each simulated exogenous event type is tagged with the real, free,
+public API that would replace it in production, and how that source's
+data actually arrives (structured/real-time vs. lagged vs. needing
+extraction first):
+
+| Event type | Real source | Data shape |
+|---|---|---|
+| Rate policy change | ECB SDMX API | Structured, real-time policy-rate series |
+| Public tender award | TED (Tenders Electronic Daily) API | Structured award notices, incl. contract value |
+| Commodity/energy shock | Eurostat / ECB energy statistics | Structured index series, weekly-to-monthly lag |
+| Sanctions/regulatory change | EU sanctions list / OpenSanctions | Structured, authoritative, updates on change |
+| EU regulatory change | EUR-Lex | Structured legal-act metadata; sector impact needs interpretation |
+| Geopolitical disruption | GDELT Project | Unstructured — needs LLM extraction first, noisier |
+| Natural disaster | EM-DAT International Disaster Database | Structured, incl. estimated damage; reporting lag of days-to-weeks |
+
+### 7.3 Output — the outcome format this project standardized on
+
+The canonical output of this system, from either pipeline, is **not** a
+raw score or a flat alert — it's a three-layer "outcome" per client, and
+this shape is the actual thing worth carrying forward into any future
+version of this system:
+
+1. **Category** — which of the six recommendation types this is
+   (`FINANCING_NEED`, `TREASURY_OPPORTUNITY`, `HEDGING_NEED`,
+   `CAPEX_FINANCING`, `RISK_REVIEW`, `ADVISORY_ONLY` — see §5).
+2. **Hypothesis** — one sentence of *general* reasoning for why this
+   event/direction implies this kind of need (the same sentence for every
+   client matched to that event type — see §6). This is the part an RM
+   can restate before getting to any number.
+3. **Sized, client-specific action** — a concrete recommended action with
+   a number attached wherever one can be honestly grounded (a real
+   transaction amount, a simulated event value, or a disclosed
+   percentage of the client's own revenue), always labeled "illustrative"
+   when it's a heuristic rather than a hard fact.
+
+Worked example, exactly as it appears in a real digest/worklist row today:
+
+> **Category:** `FINANCING_NEED`
+> **Hypothesis:** "Winning a public tender creates a cash-flow gap between
+> delivery and payment — the winner needs working capital sized to the
+> contract, not their balance sheet, and needs it before delivery starts."
+> **Action:** "Offer working-capital financing of ~€1,973,422 (25% of the
+> €7,893,686 tender value, illustrative) to bridge delivery before payment."
+
+This three-layer shape is produced for **every** matched client
+automatically (not just the handful that get a full LLM narrative each
+run) and is written into both real outputs:
+
+- **The unified worklist CSV** — one row per (client, active
+  recommendation): `rank`, `score`, `category`, `hypothesis`,
+  `recommended_action`, `evidence_summary`, plus client profile fields.
+- **The RM-facing markdown digest** — the same three layers rendered as
+  readable prose per client, with observed facts and caveats around them.
+- **The local Streamlit dashboard** — a filterable, clickable view over
+  the same worklist rows, for demoing rather than for the RM's daily use.
+
+**What is explicitly not an output**: no email, no CRM write, no
+automated outreach of any kind. The outcome is a reviewable
+recommendation; a person decides what happens next.
+
+## 8. Current state — what's actually verified vs. not
 
 **Built, running, verified end-to-end, zero paid/cloud calls:**
 - Synthetic dataset generator (300 commercial/institutional clients,
@@ -208,7 +301,7 @@ This hypothesis + sizing logic is written into the actual pipeline output
   for this, nothing plugs into a live API yet
 - AWS/Bedrock/AgentCore integration — contract-and-mock only, by policy
 
-## 8. Known limitations to state honestly if this work continues
+## 9. Known limitations to state honestly if this work continues
 
 - **Contamination**: any precision/recall/judge number from this
   session's own dataset is a development diagnostic, not a validated
@@ -230,7 +323,7 @@ This hypothesis + sizing logic is written into the actual pipeline output
   a PEP flag with a political/geopolitical event type) is a real
   constraint to keep, not a solved problem to revisit casually.
 
-## 9. Repo structure (key files only)
+## 10. Repo structure (key files only)
 
 ```
 data_generator/generate_data.py         synthetic dataset generator
@@ -253,7 +346,7 @@ docs/artifacts/                         exported presentation HTML (pipeline dia
 run_demo.sh                             one command: tests -> both pipelines -> evaluation -> worklist
 ```
 
-## 10. Working conventions this project holds itself to (useful if another session continues this work)
+## 11. Working conventions this project holds itself to (useful if another session continues this work)
 
 - **Verify, don't assert.** Every claim of "N tests pass" or "the pipeline
   ran" in this project's history was backed by an actual run in that
