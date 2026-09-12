@@ -169,19 +169,64 @@ This hypothesis + sizing logic is written into the actual pipeline output
 
 ### 7.1 Endogenous inputs, organized by banking domain
 
-A real deployment's endogenous (a client's own data) inputs map to five
-core banking domains. This project's synthetic dataset already models
-data for all five; only the **Deposits** domain has a detector built on
-top of it today — the other four are real data, waiting for a detector,
-not a gap in the data itself.
+In a real deployment, endogenous input is **not one table per domain** —
+each domain is realistically fed by a data lake / warehouse pulling from
+several core systems, each contributing multiple tables at different
+grains (transaction-level, position/snapshot-level, reference/master data,
+event/case-log data). This project's synthetic dataset simplifies that
+down to one flat CSV per concept, as a proof-of-concept scope choice, not
+a claim that a real integration would look this simple. The breakdown
+below lists the kind of tables a real data lake would actually hold per
+domain, then what this build's simplified files stand in for.
 
-| Domain | Typical real source system | Signal it carries | Status in this build |
-|---|---|---|---|
-| **1. Deposits** | Core banking / current account ledger | Account balances, incoming/outgoing payments, deposit concentration, account opening/closure | **Detector built**: `large_incoming_payment` reads `accounts.csv` / `balances.csv` / `transactions.csv`. Real trigger types not yet built: treasury cash buildup, dormancy, recurring-revenue change. |
-| **2. Lending** | Loan origination / credit facility system | Facility limits, utilization rate, drawdowns, repayment schedule, covenant status, maturity dates | Data exists (`facilities.csv`: loans, credit lines, trade finance, guarantees) — **no detector reads it yet**. Real trigger types not yet built: credit utilization spike, facility maturity approaching, covenant breach risk. |
-| **3. Balance sheet management (treasury/ALM)** | Treasury/ALM system, group consolidation | FX exposure by currency, liquidity ratios, group-level cash position, intercompany flows, currency mismatch | Data exists (`entity_groups.csv` group hierarchy, multi-currency fields on accounts/transactions) — **no detector reads it yet**. |
-| **4. Risk** | Internal credit risk rating system, covenant monitoring | Annual internal risk rating, rating migration, sector/country concentration, counterparty concentration | Data exists (`risk_ratings.csv`, annual rating per client) — **no detector reads it yet**. Real trigger types not yet built: rating downgrade, counterparty concentration. |
-| **5. Economic crime (fraud & financial crime)** | AML transaction monitoring, sanctions/PEP screening, KYC system | PEP status, sanctions screening status/date, high-risk-counterparty-jurisdiction flags, unusual transaction patterns | Data exists (`pep_flag`, `sanctions_screening_status`, `last_screening_date` on `clients.csv`; `high_risk_counterparty_flag`, `counterparty_country` on `transactions.csv`) — **deliberately no detector**, see note below. |
+**1. Deposits** — core banking / current account ledger
+- Realistic underlying tables: account master, current/savings transaction
+  log, end-of-day balance snapshot, term-deposit book & maturity schedule,
+  account opening/closure event log, deposit concentration/aggregation view
+- This build's stand-in: `accounts.csv`, `balances.csv`, `transactions.csv`
+  — **detector built**: `large_incoming_payment` reads these
+- Real trigger types not yet built: treasury cash buildup, dormancy,
+  recurring-revenue pattern change
+
+**2. Lending** — loan origination / credit facility system
+- Realistic underlying tables: facility master, drawdown/repayment
+  schedule, utilization snapshot (daily/monthly), covenant monitoring log,
+  collateral/security register, maturity/renewal calendar
+- This build's stand-in: `facilities.csv` (loans, credit lines, trade
+  finance, guarantees) — **data exists, no detector reads it yet**
+- Real trigger types not yet built: credit utilization spike, facility
+  maturity approaching, covenant breach risk
+
+**3. Balance sheet management (treasury/ALM)** — treasury/ALM system,
+group consolidation
+- Realistic underlying tables: FX position table by currency, liquidity
+  ratio feed, intercompany flow log, group consolidation/ownership
+  hierarchy, cash-pooling/sweep records, duration/gap analysis output
+- This build's stand-in: `entity_groups.csv` (group hierarchy),
+  multi-currency fields on `accounts.csv`/`transactions.csv` — **data
+  exists, no detector reads it yet**
+- Real trigger types not yet built: FX exposure emerging, group-level
+  treasury optimization opportunity
+
+**4. Risk** — internal credit risk rating system, covenant monitoring
+- Realistic underlying tables: risk-rating history (per client, per
+  period), rating-migration log, sector/country concentration exposure
+  view, counterparty concentration view, stress-test/scenario output
+- This build's stand-in: `risk_ratings.csv` (annual rating per client) —
+  **data exists, no detector reads it yet**
+- Real trigger types not yet built: rating downgrade, counterparty
+  concentration risk
+
+**5. Economic crime (fraud & financial crime)** — AML transaction
+monitoring, sanctions/PEP screening, KYC system
+- Realistic underlying tables: AML alert/case log, sanctions & PEP
+  screening log (with re-screening cadence), transaction-monitoring
+  typology flags (structuring, rapid movement, round-tripping), KYC
+  refresh/due-diligence log, adverse-media/negative-news feed
+- This build's stand-in: `pep_flag`, `sanctions_screening_status`,
+  `last_screening_date` on `clients.csv`; `high_risk_counterparty_flag`,
+  `counterparty_country` on `transactions.csv` — **data exists,
+  deliberately no detector**, see note below
 
 **Why domain 5 has no detector, on purpose, not by oversight**: this
 project is an NBA/EBM (sales-facing) system. Financial-crime detection is
