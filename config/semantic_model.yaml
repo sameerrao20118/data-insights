@@ -1,0 +1,86 @@
+# Canonical semantic model -- docs/generalization_plan.md Phase 1.
+#
+# Every concept/field name here is what detectors, tools, the exposure
+# qualifier, and the worklist are MEANT to depend on (the rewire to
+# actually make that true is tracked separately -- see
+# docs/generalization_plan.md's "Phase 1 status" note; this file and its
+# bindings are real and tested today, independent of that rewire).
+#
+# A "binding" (config/bindings/<name>.yaml) maps a physical schema's
+# entities/columns onto these concepts. Adding a schema means writing a
+# binding, never editing this file, unless the new schema needs a
+# concept genuinely nothing here has yet.
+
+concepts:
+  Party:
+    key: party_id
+    bitemporal: optional
+    fields:
+      party_id: {type: string, required: true}
+      segment: {type: string, required: false}
+      sector_code: {type: string, required: false}
+      sector_name: {type: string, required: false}
+      country_code: {type: string, required: false}
+      high_risk_flag: {type: bool, required: false}
+
+  Account:
+    key: account_id
+    bitemporal: optional
+    fields:
+      account_id: {type: string, required: true}
+      party_id: {type: string, required: true}
+      product_class: {type: enum, values: [deposit, facility, mortgage, other], required: true}
+      product_code: {type: string, required: false}
+      original_limit: {type: float, required: false}
+      close_date: {type: date, required: false}
+      fixed_rate_end_date: {type: date, required: false}
+      currency: {type: string, required: false}
+
+  BalanceObservation:
+    key: [account_id, observed_at]
+    bitemporal: false
+    fields:
+      account_id: {type: string, required: true}
+      observed_at: {type: date, required: true}
+      balance: {type: float, required: true}
+
+  Transaction:
+    key: transaction_id
+    bitemporal: false
+    fields:
+      transaction_id: {type: string, required: false}
+      account_id: {type: string, required: true}
+      posted_at: {type: date, required: true}
+      amount: {type: float, required: true}
+      direction: {type: enum, values: [credit, debit], required: true}
+      currency: {type: string, required: false}
+
+  RiskGradeVersion:
+    key: party_id
+    bitemporal: true
+    fields:
+      party_id: {type: string, required: true}
+      valid_from: {type: date, required: true}
+      valid_to: {type: date, required: false}
+      grade_code: {type: string, required: true}
+      grade_value: {type: int, required: true}
+
+  PartyMetricVersion:
+    key: party_id
+    bitemporal: true
+    fields:
+      party_id: {type: string, required: true}
+      valid_from: {type: date, required: true}
+      valid_to: {type: date, required: false}
+      metric_type: {type: string, required: true}
+      value: {type: float, required: true}
+
+  CollateralValuation:
+    key: [collateral_id, valued_at]
+    bitemporal: true
+    fields:
+      collateral_id: {type: string, required: true}
+      account_id: {type: string, required: true}
+      valued_at: {type: date, required: true}
+      value: {type: float, required: true}
+      original_limit: {type: float, required: false}

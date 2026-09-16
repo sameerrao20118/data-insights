@@ -6,3 +6,10 @@ pyyaml
 duckdb
 snowflake-connector-python
 streamlit
+strands-agents==1.55.1
+ollama==0.6.2
+# ML challenger slots (datainsights/ml/) -- the deterministic defaults work
+# without this; only the opt-in challengers import it. Version pinned to
+# stay close to the 1.9.1 verified on the bank's Artifactory per
+# docs/decision_record.md Tab 7.
+scikit-learn==1.7.2

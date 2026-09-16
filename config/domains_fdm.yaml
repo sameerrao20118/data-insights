@@ -1,0 +1,126 @@
+# Domain registry (data): product codes, allowed RM actions, and
+# per-endogenous-signal NBA category + hypothesis -- one block per
+# domain. Read by datainsights/domain_registry.py; consumed by
+# agents/tools.py (product_codes), agents/domain_agent.py
+# (allowed_actions), and datainsights/correlation/hypothesis.py
+# (category + hypothesis per signal_type).
+#
+# This is the DATA half of the domain-registry milestone (M7, see
+# docs/current_state.md / docs/adding_a_new_domain.md). The CODE half
+# (which Strands tool factory and which detection_engine module each
+# domain owns) is registered separately in agents/tools.py via
+# agents/domain_registry.py -- see that module's own docstring for why
+# the split, and docs/adding_a_new_domain.md for the full "add a domain"
+# checklist this file is step 1 of.
+#
+# Loaded directly by datainsights/correlation/hypothesis.py at first use
+# (not passed in as a rules dict) so that a bare
+# `from datainsights.correlation.hypothesis import assemble` -- e.g.
+# tests/test_correlation.py's own import shape -- always sees real
+# category/hypothesis text, with no dependency on agents/tools.py or any
+# other agents/* module having been imported first.
+
+deposits:
+  product_codes:
+    deposit: [DEP]
+  allowed_actions:
+    - "RM to review the client's deposit activity and recent balance trend"
+    - "RM to make routine contact with the client about their cash position"
+    - "No action -- monitor only"
+  signals:
+    cash_buildup:
+      category: TREASURY_OPPORTUNITY
+      hypothesis: >-
+        A sustained rise in deposit balance usually means idle cash building
+        up -- a treasury/deposit conversation is timely before it moves
+        elsewhere.
+    dormancy:
+      category: ADVISORY_ONLY
+      hypothesis: >-
+        An account with no recent activity may signal the relationship is
+        fading -- worth a check-in before it moves entirely.
+    revenue_pattern_change:
+      category: FINANCING_NEED
+      hypothesis: >-
+        A structural step-change in incoming payment pattern often reflects
+        genuine business growth -- financing sized to the new scale, not the
+        old one, may be relevant.
+
+lending:
+  product_codes:
+    facility: [LON, ODR]
+    mortgage: [MTG]
+  allowed_actions:
+    - "RM to review the client's facility utilization and headroom"
+    - "RM to initiate a facility renewal/refinancing conversation"
+    - "RM to review collateral adequacy with Credit Risk"
+    - "No action -- monitor only"
+  signals:
+    facility_utilization_spike:
+      category: FINANCING_NEED
+      hypothesis: >-
+        Drawing close to a facility's limit signals the client may need more
+        headroom soon, before the limit itself becomes a constraint on their
+        operations.
+    facility_maturity_approaching:
+      category: FINANCING_NEED
+      hypothesis: >-
+        A facility approaching its close date needs a renewal conversation
+        before it lapses, not after.
+    fixed_rate_expiry:
+      # fixed_rate_expiry is genuinely ambiguous per docs/fdm_reference.md's
+      # Agent Signal Map ("TREASURY_OPPORTUNITY or HEDGING_NEED...
+      # direction-dependent") -- resolved here to TREASURY_OPPORTUNITY as
+      # the more common case, a simplification pending real rate-context
+      # data this pass doesn't have. Unchanged from the prior hardcoded
+      # mapping in datainsights/correlation/hypothesis.py.
+      category: TREASURY_OPPORTUNITY
+      hypothesis: >-
+        A fixed-rate period ending soon is a natural moment to discuss
+        refinancing or hedging terms before the client rolls onto a
+        different rate by default.
+      # A2 (docs/agentic_plan.md): flags this signal_type for
+      # agents/investigator_agent.py -- category_options is the fixed set
+      # it may propose between (never free text, never a category outside
+      # this list). Category stays TREASURY_OPPORTUNITY above until an RM
+      # confirms a proposed refinement; the investigator never changes it
+      # itself.
+      ambiguous: true
+      category_options: [TREASURY_OPPORTUNITY, HEDGING_NEED]
+    collateral_coverage_drop:
+      category: RISK_REVIEW
+      hypothesis: >-
+        Collateral value falling below required coverage on a facility is a
+        risk exposure that needs review, independent of the client's other
+        activity.
+
+exogenous:
+  product_codes: {}
+  allowed_actions:
+    - "RM to raise the external event with the client and discuss financing needs it may create"
+    - "RM to confirm the client's exposure to this event before any offer is made"
+    - "No action -- monitor only"
+  # Exogenous exposure isn't a detection_engine Signal (see
+  # agents/tools.py's make_exogenous_tools docstring) -- it's handled by
+  # agents/orchestrator.py's exo_kwargs path, not this signals map.
+  signals: {}
+
+# A4 (docs/agentic_plan.md): first domain registered entirely after M7 --
+# see agents/tools.py's make_risk_tools docstring for why only
+# rating_downgrade is wired (pd_migration needs PARTY_METRIC, which
+# doesn't exist in the generated dataset -- stays unregistered).
+risk:
+  # PARTY isn't an AGREEMENT-typed entity -- rating_downgrade reads it
+  # directly (agents/tools.py), no agreement type-code scoping needed.
+  product_codes: {}
+  allowed_actions:
+    - "RM to review the downgrade with Credit Risk before any product conversation"
+    - "No action -- monitor only"
+  signals:
+    rating_downgrade:
+      category: RISK_REVIEW
+      hypothesis: >-
+        A material worsening in credit risk grade over the review window is a
+        risk exposure that needs review, independent of the client's other
+        activity -- and per rule 1, suppresses any revenue-category
+        recommendation for this client until reviewed.

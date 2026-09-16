@@ -1,0 +1,301 @@
+PRTY_ID,NACE_SECTION_CD,NACE_CODE,SECTOR_NM
+PRTY00000,G,46.39,Wholesale & Retail Trade
+PRTY00001,M,71.12,Professional & Business Services
+PRTY00002,F,43.29,Construction
+PRTY00003,C,22.29,Manufacturing
+PRTY00004,Q,86.10,Health & Social Care
+PRTY00005,J,63.11,Information & Communication
+PRTY00006,G,46.39,Wholesale & Retail Trade
+PRTY00007,C,10.71,Manufacturing
+PRTY00008,Q,86.10,Health & Social Care
+PRTY00009,M,69.20,Professional & Business Services
+PRTY00010,M,71.12,Professional & Business Services
+PRTY00011,M,69.20,Professional & Business Services
+PRTY00012,J,62.01,Information & Communication
+PRTY00013,G,46.39,Wholesale & Retail Trade
+PRTY00014,G,47.11,Wholesale & Retail Trade
+PRTY00015,L,68.20,Real Estate
+PRTY00016,L,68.31,Real Estate
+PRTY00017,C,13.20,Manufacturing
+PRTY00018,G,46.39,Wholesale & Retail Trade
+PRTY00019,G,46.39,Wholesale & Retail Trade
+PRTY00020,Q,87.30,Health & Social Care
+PRTY00021,J,62.01,Information & Communication
+PRTY00022,I,55.10,Hospitality & Food Service
+PRTY00023,L,68.20,Real Estate
+PRTY00024,M,69.20,Professional & Business Services
+PRTY00025,L,68.31,Real Estate
+PRTY00026,A,10.51,Agriculture & Food Production
+PRTY00027,F,41.20,Construction
+PRTY00028,J,63.11,Information & Communication
+PRTY00029,G,45.20,Wholesale & Retail Trade
+PRTY00030,G,47.11,Wholesale & Retail Trade
+PRTY00031,D,35.30,Energy & Utilities
+PRTY00032,G,46.39,Wholesale & Retail Trade
+PRTY00033,C,10.71,Manufacturing
+PRTY00034,Q,86.10,Health & Social Care
+PRTY00035,C,10.71,Manufacturing
+PRTY00036,H,49.41,Transportation & Logistics
+PRTY00037,M,69.20,Professional & Business Services
+PRTY00038,G,46.90,Wholesale & Retail Trade
+PRTY00039,A,01.11,Agriculture & Food Production
+PRTY00040,G,46.39,Wholesale & Retail Trade
+PRTY00041,M,69.20,Professional & Business Services
+PRTY00042,J,63.11,Information & Communication
+PRTY00043,I,56.10,Hospitality & Food Service
+PRTY00044,D,35.11,Energy & Utilities
+PRTY00045,J,61.10,Information & Communication
+PRTY00046,A,01.11,Agriculture & Food Production
+PRTY00047,A,01.11,Agriculture & Food Production
+PRTY00048,G,45.20,Wholesale & Retail Trade
+PRTY00049,M,69.20,Professional & Business Services
+PRTY00050,O,84.11,Public Administration / Institutional
+PRTY00051,J,63.11,Information & Communication
+PRTY00052,H,52.10,Transportation & Logistics
+PRTY00053,I,55.10,Hospitality & Food Service
+PRTY00054,O,84.30,Public Administration / Institutional
+PRTY00055,L,68.20,Real Estate
+PRTY00056,G,45.20,Wholesale & Retail Trade
+PRTY00057,J,62.01,Information & Communication
+PRTY00058,M,69.20,Professional & Business Services
+PRTY00059,D,35.30,Energy & Utilities
+PRTY00060,H,52.10,Transportation & Logistics
+PRTY00061,C,28.99,Manufacturing
+PRTY00062,A,10.51,Agriculture & Food Production
+PRTY00063,D,35.30,Energy & Utilities
+PRTY00064,C,25.11,Manufacturing
+PRTY00065,Q,86.10,Health & Social Care
+PRTY00066,I,55.10,Hospitality & Food Service
+PRTY00067,C,25.11,Manufacturing
+PRTY00068,M,71.12,Professional & Business Services
+PRTY00069,H,52.10,Transportation & Logistics
+PRTY00070,A,01.11,Agriculture & Food Production
+PRTY00071,A,10.51,Agriculture & Food Production
+PRTY00072,C,22.29,Manufacturing
+PRTY00073,F,41.20,Construction
+PRTY00074,C,13.20,Manufacturing
+PRTY00075,G,46.39,Wholesale & Retail Trade
+PRTY00076,C,25.11,Manufacturing
+PRTY00077,O,84.30,Public Administration / Institutional
+PRTY00078,H,53.20,Transportation & Logistics
+PRTY00079,F,43.29,Construction
+PRTY00080,H,49.41,Transportation & Logistics
+PRTY00081,O,84.30,Public Administration / Institutional
+PRTY00082,G,47.11,Wholesale & Retail Trade
+PRTY00083,M,70.22,Professional & Business Services
+PRTY00084,M,70.22,Professional & Business Services
+PRTY00085,A,01.11,Agriculture & Food Production
+PRTY00086,M,70.22,Professional & Business Services
+PRTY00087,I,56.10,Hospitality & Food Service
+PRTY00088,G,47.11,Wholesale & Retail Trade
+PRTY00089,H,53.20,Transportation & Logistics
+PRTY00090,Q,86.10,Health & Social Care
+PRTY00091,F,42.11,Construction
+PRTY00092,M,71.12,Professional & Business Services
+PRTY00093,G,47.11,Wholesale & Retail Trade
+PRTY00094,C,28.99,Manufacturing
+PRTY00095,G,46.90,Wholesale & Retail Trade
+PRTY00096,J,63.11,Information & Communication
+PRTY00097,G,46.90,Wholesale & Retail Trade
+PRTY00098,G,45.20,Wholesale & Retail Trade
+PRTY00099,C,10.71,Manufacturing
+PRTY00100,C,10.71,Manufacturing
+PRTY00101,G,46.90,Wholesale & Retail Trade
+PRTY00102,I,56.10,Hospitality & Food Service
+PRTY00103,H,52.10,Transportation & Logistics
+PRTY00104,J,63.11,Information & Communication
+PRTY00105,F,42.11,Construction
+PRTY00106,F,42.11,Construction
+PRTY00107,G,47.11,Wholesale & Retail Trade
+PRTY00108,L,68.20,Real Estate
+PRTY00109,C,22.29,Manufacturing
+PRTY00110,J,62.01,Information & Communication
+PRTY00111,M,71.12,Professional & Business Services
+PRTY00112,D,35.11,Energy & Utilities
+PRTY00113,C,10.71,Manufacturing
+PRTY00114,D,35.11,Energy & Utilities
+PRTY00115,L,68.20,Real Estate
+PRTY00116,C,10.71,Manufacturing
+PRTY00117,A,01.11,Agriculture & Food Production
+PRTY00118,I,56.10,Hospitality & Food Service
+PRTY00119,F,43.29,Construction
+PRTY00120,F,41.20,Construction
+PRTY00121,A,10.51,Agriculture & Food Production
+PRTY00122,F,41.20,Construction
+PRTY00123,A,01.11,Agriculture & Food Production
+PRTY00124,O,84.11,Public Administration / Institutional
+PRTY00125,G,47.11,Wholesale & Retail Trade
+PRTY00126,L,68.31,Real Estate
+PRTY00127,C,10.71,Manufacturing
+PRTY00128,C,13.20,Manufacturing
+PRTY00129,M,71.12,Professional & Business Services
+PRTY00130,G,47.11,Wholesale & Retail Trade
+PRTY00131,G,46.90,Wholesale & Retail Trade
+PRTY00132,Q,86.10,Health & Social Care
+PRTY00133,M,71.12,Professional & Business Services
+PRTY00134,J,62.01,Information & Communication
+PRTY00135,F,41.20,Construction
+PRTY00136,G,46.39,Wholesale & Retail Trade
+PRTY00137,A,10.51,Agriculture & Food Production
+PRTY00138,G,45.20,Wholesale & Retail Trade
+PRTY00139,C,25.11,Manufacturing
+PRTY00140,M,69.20,Professional & Business Services
+PRTY00141,M,69.20,Professional & Business Services
+PRTY00142,M,69.20,Professional & Business Services
+PRTY00143,L,68.31,Real Estate
+PRTY00144,F,42.11,Construction
+PRTY00145,G,46.90,Wholesale & Retail Trade
+PRTY00146,H,49.41,Transportation & Logistics
+PRTY00147,F,42.11,Construction
+PRTY00148,A,01.11,Agriculture & Food Production
+PRTY00149,I,56.10,Hospitality & Food Service
+PRTY00150,M,71.12,Professional & Business Services
+PRTY00151,M,70.22,Professional & Business Services
+PRTY00152,M,69.20,Professional & Business Services
+PRTY00153,C,13.20,Manufacturing
+PRTY00154,C,10.71,Manufacturing
+PRTY00155,F,43.29,Construction
+PRTY00156,C,28.99,Manufacturing
+PRTY00157,C,13.20,Manufacturing
+PRTY00158,M,71.12,Professional & Business Services
+PRTY00159,C,10.71,Manufacturing
+PRTY00160,M,70.22,Professional & Business Services
+PRTY00161,G,46.90,Wholesale & Retail Trade
+PRTY00162,J,63.11,Information & Communication
+PRTY00163,C,13.20,Manufacturing
+PRTY00164,I,55.10,Hospitality & Food Service
+PRTY00165,G,46.39,Wholesale & Retail Trade
+PRTY00166,J,61.10,Information & Communication
+PRTY00167,Q,86.10,Health & Social Care
+PRTY00168,F,41.20,Construction
+PRTY00169,L,68.31,Real Estate
+PRTY00170,G,45.20,Wholesale & Retail Trade
+PRTY00171,C,13.20,Manufacturing
+PRTY00172,M,69.20,Professional & Business Services
+PRTY00173,F,41.20,Construction
+PRTY00174,Q,86.10,Health & Social Care
+PRTY00175,G,45.20,Wholesale & Retail Trade
+PRTY00176,C,25.11,Manufacturing
+PRTY00177,C,25.11,Manufacturing
+PRTY00178,F,43.29,Construction
+PRTY00179,M,70.22,Professional & Business Services
+PRTY00180,H,49.41,Transportation & Logistics
+PRTY00181,H,53.20,Transportation & Logistics
+PRTY00182,O,84.11,Public Administration / Institutional
+PRTY00183,F,43.29,Construction
+PRTY00184,G,45.20,Wholesale & Retail Trade
+PRTY00185,F,43.29,Construction
+PRTY00186,G,46.39,Wholesale & Retail Trade
+PRTY00187,F,42.11,Construction
+PRTY00188,H,52.10,Transportation & Logistics
+PRTY00189,J,61.10,Information & Communication
+PRTY00190,F,43.29,Construction
+PRTY00191,Q,87.30,Health & Social Care
+PRTY00192,G,46.39,Wholesale & Retail Trade
+PRTY00193,H,49.41,Transportation & Logistics
+PRTY00194,H,52.10,Transportation & Logistics
+PRTY00195,F,42.11,Construction
+PRTY00196,O,84.11,Public Administration / Institutional
+PRTY00197,F,43.29,Construction
+PRTY00198,G,47.11,Wholesale & Retail Trade
+PRTY00199,C,25.11,Manufacturing
+PRTY00200,H,49.41,Transportation & Logistics
+PRTY00201,G,46.39,Wholesale & Retail Trade
+PRTY00202,M,69.20,Professional & Business Services
+PRTY00203,I,56.10,Hospitality & Food Service
+PRTY00204,F,43.29,Construction
+PRTY00205,L,68.31,Real Estate
+PRTY00206,I,56.10,Hospitality & Food Service
+PRTY00207,F,43.29,Construction
+PRTY00208,C,10.71,Manufacturing
+PRTY00209,M,71.12,Professional & Business Services
+PRTY00210,J,63.11,Information & Communication
+PRTY00211,L,68.31,Real Estate
+PRTY00212,G,47.11,Wholesale & Retail Trade
+PRTY00213,O,84.30,Public Administration / Institutional
+PRTY00214,M,71.12,Professional & Business Services
+PRTY00215,A,10.51,Agriculture & Food Production
+PRTY00216,D,35.30,Energy & Utilities
+PRTY00217,A,01.11,Agriculture & Food Production
+PRTY00218,Q,86.10,Health & Social Care
+PRTY00219,M,69.20,Professional & Business Services
+PRTY00220,A,01.11,Agriculture & Food Production
+PRTY00221,C,22.29,Manufacturing
+PRTY00222,J,63.11,Information & Communication
+PRTY00223,Q,86.10,Health & Social Care
+PRTY00224,H,53.20,Transportation & Logistics
+PRTY00225,M,69.20,Professional & Business Services
+PRTY00226,F,43.29,Construction
+PRTY00227,Q,86.10,Health & Social Care
+PRTY00228,G,47.11,Wholesale & Retail Trade
+PRTY00229,I,55.10,Hospitality & Food Service
+PRTY00230,C,25.11,Manufacturing
+PRTY00231,D,35.30,Energy & Utilities
+PRTY00232,F,42.11,Construction
+PRTY00233,C,28.99,Manufacturing
+PRTY00234,F,41.20,Construction
+PRTY00235,C,10.71,Manufacturing
+PRTY00236,C,25.11,Manufacturing
+PRTY00237,M,70.22,Professional & Business Services
+PRTY00238,A,01.11,Agriculture & Food Production
+PRTY00239,I,56.10,Hospitality & Food Service
+PRTY00240,C,13.20,Manufacturing
+PRTY00241,M,70.22,Professional & Business Services
+PRTY00242,A,10.51,Agriculture & Food Production
+PRTY00243,I,55.10,Hospitality & Food Service
+PRTY00244,C,28.99,Manufacturing
+PRTY00245,J,63.11,Information & Communication
+PRTY00246,D,35.30,Energy & Utilities
+PRTY00247,L,68.31,Real Estate
+PRTY00248,F,41.20,Construction
+PRTY00249,C,28.99,Manufacturing
+PRTY00250,C,13.20,Manufacturing
+PRTY00251,C,22.29,Manufacturing
+PRTY00252,H,49.41,Transportation & Logistics
+PRTY00253,C,22.29,Manufacturing
+PRTY00254,G,46.39,Wholesale & Retail Trade
+PRTY00255,G,47.11,Wholesale & Retail Trade
+PRTY00256,J,63.11,Information & Communication
+PRTY00257,C,22.29,Manufacturing
+PRTY00258,H,52.10,Transportation & Logistics
+PRTY00259,Q,86.10,Health & Social Care
+PRTY00260,G,45.20,Wholesale & Retail Trade
+PRTY00261,L,68.20,Real Estate
+PRTY00262,C,22.29,Manufacturing
+PRTY00263,F,42.11,Construction
+PRTY00264,C,10.71,Manufacturing
+PRTY00265,C,28.99,Manufacturing
+PRTY00266,O,84.11,Public Administration / Institutional
+PRTY00267,H,53.20,Transportation & Logistics
+PRTY00268,H,52.10,Transportation & Logistics
+PRTY00269,C,13.20,Manufacturing
+PRTY00270,F,42.11,Construction
+PRTY00271,G,46.90,Wholesale & Retail Trade
+PRTY00272,I,55.10,Hospitality & Food Service
+PRTY00273,J,61.10,Information & Communication
+PRTY00274,L,68.20,Real Estate
+PRTY00275,G,46.39,Wholesale & Retail Trade
+PRTY00276,L,68.20,Real Estate
+PRTY00277,G,46.39,Wholesale & Retail Trade
+PRTY00278,D,35.11,Energy & Utilities
+PRTY00279,H,49.41,Transportation & Logistics
+PRTY00280,F,41.20,Construction
+PRTY00281,G,46.39,Wholesale & Retail Trade
+PRTY00282,F,43.29,Construction
+PRTY00283,D,35.30,Energy & Utilities
+PRTY00284,I,55.10,Hospitality & Food Service
+PRTY00285,I,55.10,Hospitality & Food Service
+PRTY00286,G,46.39,Wholesale & Retail Trade
+PRTY00287,M,69.20,Professional & Business Services
+PRTY00288,Q,86.10,Health & Social Care
+PRTY00289,G,46.90,Wholesale & Retail Trade
+PRTY00290,H,49.41,Transportation & Logistics
+PRTY00291,A,01.11,Agriculture & Food Production
+PRTY00292,J,63.11,Information & Communication
+PRTY00293,J,63.11,Information & Communication
+PRTY00294,M,71.12,Professional & Business Services
+PRTY00295,G,46.39,Wholesale & Retail Trade
+PRTY00296,G,47.11,Wholesale & Retail Trade
+PRTY00297,M,70.22,Professional & Business Services
+PRTY00298,Q,86.10,Health & Social Care
+PRTY00299,F,42.11,Construction

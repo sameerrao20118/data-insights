@@ -49,7 +49,9 @@ TECHNIQUE_ROWS = [
     ("Narrative (evidence → text)", "LLM (local Ollama)", "Validated against the evidence packet; template fallback on failure"),
     ("Quality check", "LLM (local Ollama)", "Sampled judge, deliberately a different model than the narrator"),
     ("Category tagging", "RULE-BASED", "Static/direction-conditional lookup table, not a model"),
-    ("Not built yet", "MACHINE LEARNING", "Deferred — no real RM accept/reject outcomes exist yet to train against"),
+    ("Client baseline challenger (FDM)", "MACHINE LEARNING",
+     "Opt-in IsolationForest baseline vs. deterministic benchmark (datainsights/ml/) — not the production default"),
+    ("Propensity / ranking", "NOT BUILT", "Blocked on RM response data access (D6); arbitration belongs to Pega"),
 ]
 
 EXTERNAL_SOURCE_MAP = [
@@ -123,7 +125,8 @@ with st.sidebar:
     st.divider()
     page = st.radio(
         "Section",
-        ["Overview", "Data sources", "Run the pipeline", "Worklist", "Digests", "Technique reference", "Status"],
+        ["Overview", "Data sources", "Run the pipeline", "Worklist", "FDM worklist", "Digests",
+         "Technique reference", "Status"],
         label_visibility="collapsed",
     )
     st.divider()
@@ -317,6 +320,133 @@ elif page == "Worklist":
             st.markdown(f"**Recommended action:** {row['recommended_action']}")
             st.markdown(f"**Evidence:** {row['evidence_summary']}")
             st.caption(f"Narrative source: {row['narrative_source']} · Event date: {row['event_date']}")
+
+
+# ---------- FDM worklist ----------
+
+elif page == "FDM worklist":
+    fdm_path = INSIGHTS_DIR / "fdm_rm_worklist.csv"
+    if not fdm_path.exists():
+        st.warning("No FDM worklist yet — run `python -m agents.demo_fdm_scenario` (whole book, "
+                   "no LLM calls) to generate `var/insights/fdm_rm_worklist.csv`.")
+    else:
+        df = read_csv(fdm_path)
+        st.caption(
+            f"Reading `{fdm_path.relative_to(ROOT)}` — {len(df):,} recommendations from the FDM "
+            "agentic pipeline (`agents/orchestrator.py`). Every revenue figure is an illustrative "
+            "planning assumption from `config/rules.yaml`, not this bank's pricing or a quote."
+        )
+        revenue = df["indicative_revenue_eur"].dropna()
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Recommendations", len(df))
+        m2.metric("Revenue-earning", int((~df["nba_category"].isin(["RISK_REVIEW", "ADVISORY_ONLY"])).sum()))
+        m3.metric("With a sized offer", int(revenue.shape[0]))
+        m4.metric("Indicative revenue (illustrative)", f"EUR {revenue.sum():,.0f}")
+        st.bar_chart(df["nba_category"].value_counts())
+
+        f1, f2, f3, f4 = st.columns(4)
+        with f1:
+            cats = st.multiselect("Category", sorted(df["nba_category"].unique()), key="fdm_cat")
+        with f2:
+            segs = st.multiselect("Segment", sorted(df["segment"].dropna().unique()), key="fdm_seg")
+        with f3:
+            secs = st.multiselect("Sector", sorted(df["sector"].dropna().unique()), key="fdm_sec")
+        with f4:
+            ctys = st.multiselect("Country", sorted(df["country"].dropna().unique()), key="fdm_cty")
+        filtered = df.copy()
+        for column, chosen in (("nba_category", cats), ("segment", segs), ("sector", secs), ("country", ctys)):
+            if chosen:
+                filtered = filtered[filtered[column].isin(chosen)]
+
+        st.dataframe(
+            filtered[["rank", "prty_id", "segment", "sector", "country", "nba_category",
+                      "indicative_revenue_eur", "indicative_offer_eur", "signal_strength",
+                      "confirming_domains", "why_now"]],
+            width="stretch", hide_index=True, height=380,
+        )
+
+        st.divider()
+        st.subheader("Prepare for the client call")
+        pool = filtered if len(filtered) else df
+        labels = {r["rank"]: f"#{r['rank']} — {r['prty_id']} — {r['nba_category']}" for _, r in pool.iterrows()}
+        chosen_rank = st.selectbox("Recommendation", list(labels), format_func=lambda r: labels[r])
+        row = df[df["rank"] == chosen_rank].iloc[0]
+        revenue_text = (f"~EUR {row['indicative_revenue_eur']:,.0f} (illustrative)"
+                        if pd.notna(row["indicative_revenue_eur"]) else "none — not a sized revenue opportunity")
+        st.markdown(f"**{row['prty_id']}** — {row['segment']} · {row['sector']} · {row['country']}")
+        st.markdown(f"**Why now:** {row['why_now']}")
+        st.markdown(f"**Hypothesis:** {row['hypothesis']}")
+        st.markdown(f"**Recommended action:** {row['recommended_action']}")
+        st.markdown(f"**Indicative revenue to bank:** {revenue_text} — {row['revenue_mechanism']}")
+        st.info(f"**Suggested opening:** {row['talking_point']}")
+        st.caption(
+            f"Confidence {row['signal_strength']}/5, confirmed by: {row['confirming_domains']} · "
+            f"Evidence `{row['evidence_ref']}` · Sizing basis `{row['sizing_basis']}` · "
+            f"RM response options: {row['response_actions']}"
+        )
+        if bool(row.get("ambiguous")):
+            st.caption("⚠️ This category came from a disclosed simplification "
+                      "(see `docs/adding_a_new_domain.md`'s ambiguous-signal note) -- "
+                      "worth a second look before leading a client conversation with it.")
+
+        st.divider()
+        st.subheader("Ask about this recommendation")
+        st.caption(
+            "Answers ONLY from this row's own facts — local Ollama, validated, "
+            "no other client's data reachable (agents/rm_copilot_agent.py). "
+            "Falls back to a plain fact list if the model is unavailable or its "
+            "answer doesn't check out."
+        )
+        rec_id = row.get("recommendation_id", "") or ""
+        question = st.text_input("Question", key=f"copilot_q_{chosen_rank}",
+                                 placeholder="e.g. Why is this sized at that amount?")
+        if st.button("Ask", key=f"copilot_ask_{chosen_rank}") and question.strip():
+            with st.spinner("Asking (local Ollama)..."):
+                try:
+                    from agents.model_factory import get_model
+                    from agents.rm_copilot_agent import ask
+                    from datainsights.runtime import build_runtime
+
+                    model = get_model(build_runtime("fdm_local").model_config)
+                    answer = ask(question, row.to_dict(), model)
+                    st.session_state[f"copilot_answer_{chosen_rank}"] = answer
+                except Exception as e:  # noqa: BLE001 -- dashboard must never crash on a copilot failure
+                    st.session_state[f"copilot_answer_{chosen_rank}"] = None
+                    st.error(f"Copilot unavailable: {type(e).__name__}: {e}")
+        cached_answer = st.session_state.get(f"copilot_answer_{chosen_rank}")
+        if cached_answer is not None:
+            if cached_answer.status == "fallback":
+                st.warning(cached_answer.answer)
+            else:
+                st.markdown(f"**Answer:** {cached_answer.answer}")
+            st.caption(f"_source: {cached_answer.narrative_source}_")
+
+        st.divider()
+        st.subheader("Record RM response")
+        st.caption(
+            "The live Pega->CRM taxonomy, captured here against this recommendation's "
+            "stable id — this is the actual start of the feedback loop D6 describes "
+            "(datainsights/rm_feedback.py); no propensity model reads it yet."
+        )
+        if not rec_id:
+            st.caption("(this row has no recommendation_id — regenerate the worklist to get one)")
+        else:
+            from datainsights.rm_feedback import RESPONSE_ACTIONS, connect, feedback_for_recommendation, record_feedback
+
+            feedback_db_path = str(ROOT / "var" / "rm_feedback.db")
+            response = st.radio("Response", RESPONSE_ACTIONS, key=f"fb_response_{chosen_rank}", horizontal=True)
+            sub_reason = st.text_input("Sub-reason (optional)", key=f"fb_reason_{chosen_rank}")
+            if st.button("Save response", key=f"fb_save_{chosen_rank}"):
+                with connect(feedback_db_path) as con:
+                    record_feedback(con, recommendation_id=rec_id, prty_id=row["prty_id"],
+                                    response=response, sub_reason=sub_reason, recorded_by="dashboard")
+                st.success(f"Recorded: {response}")
+
+            with connect(feedback_db_path) as con:
+                history = feedback_for_recommendation(con, rec_id)
+            if history:
+                st.caption("Response history for this recommendation:")
+                st.dataframe(pd.DataFrame(history), width="stretch", hide_index=True)
 
 
 # ---------- Digests ----------

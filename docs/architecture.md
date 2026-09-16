@@ -3,258 +3,337 @@
 ## Purpose
 
 A commercial/institutional banking Next-Best-Action (NBA) proof of
-concept: detect meaningful client events from transaction data, rank them
-transparently, and produce evidence-grounded, human-reviewed summaries for
-Relationship Managers. See `README.md` for the one-paragraph pitch and
-`docs/current_state.md` for what's actually verified working today.
+concept, built against NatWest's Federated Data Model
+(`docs/fdm_reference.md`) and a captured engineering Decision Record
+(`docs/decision_record.md`): detect meaningful client events —
+endogenous (a client's own transactions/facilities/risk grade) and
+exogenous (external tenders/market events) — assemble them into one
+ranked, sized recommendation per client, and hand it to a Relationship
+Manager as a human-reviewed worklist. See `docs/current_state.md` for
+what's actually verified working today, and `docs/agentic_plan.md` for
+where LLM agents genuinely add capability versus where the pipeline is,
+and stays, deterministic.
 
 ## Pipeline
 
 ```mermaid
 flowchart LR
     subgraph Source["Configured source"]
-        OL[OfflineLocalSource\nDuckDB over CSV]
-        SF[SnowflakeSource\nNOT RUN]
+        FL[FdmLocalSource\nDuckDB over CSV, bi-temporal as-at]
+        SF[FdmSnowflakeSource\nNOT RUN]
     end
-    Contract[config/entities.yaml\nsource contract]
-    Det[detection_engine/\nlarge_incoming_payment.py]
-    Rank[datainsights/ranking.py]
-    Nar["datainsights/narrative/\ntemplate.py + ollama_narrator.py"]
-    Judge["datainsights/judge/\noffline_judge.py (sampled)"]
-    State[(datainsights/state.py\nSQLite)]
-    Digest[datainsights/digest.py\nmarkdown RM digest]
-    Eval["evaluation/evaluate.py\n(separate role)"]
-    GT[["protected_evaluator_only/\ntrigger_events.csv"]]
+    Contract[config/entities_fdm.yaml\nsource contract]
+    DReg[config/domains_fdm.yaml\ndomain registry -- data half]
+    Tools["agents/tools.py\nStrands @tool per detector, registered per domain"]
+    Det["detection_engine/\n7 FDM detectors + rating_downgrade"]
+    DA["agents/domain_agent.py\nnarrates verified facts, no tool access"]
+    Bus["datainsights/correlation/\nSignal Bus -> Hypothesis Assembler -> De-dup"]
+    Rec[(Recommendation)]
+    A1["external_events/event_extraction_agent.py\nA1: text -> validated ExogenousEvent"]
+    A2["agents/investigator_agent.py\nA2: proposes a refinement, RM confirms"]
+    A3["agents/rm_copilot_agent.py\nA3: answers from one row, RM feedback capture"]
+    Sinks["datainsights/sinks/\nMIMO JSON, Pega event mock, RM worklist/digest"]
+    GT[["protected_evaluator_only/\nlabels -- never read here"]]
 
-    OL --> Contract
+    FL --> Contract
     SF -.-> Contract
-    Contract --> Det
-    Det --> Rank
-    Rank --> Nar
-    Nar --> Digest
-    Nar --> Judge
-    Rank --> State
-    Nar --> State
-    Det -.->|"detections"| Eval
-    GT -.->|"ground truth\n(evaluator only)"| Eval
+    Contract --> Tools
+    DReg --> Tools
+    Tools --> Det
+    Det --> DA
+    A1 -->|"validated event"| Bus
+    DA --> Bus
+    Bus --> Rec
+    Rec -.->|"if ambiguous"| A2
+    Rec --> Sinks
+    Sinks --> A3
+    A3 -.->|"RM response"| Rec
 
     style SF stroke-dasharray: 5 5
     style GT fill:#4a1a1a,stroke:#c44
 ```
 
-Dashed = not executed / access-restricted. The detector never receives
-`trigger_events.csv` — only `evaluation/evaluate.py` reads it, and that
-module is deliberately separate code, run separately, per the leakage
-boundary described below. This diagram covers the endogenous
-(transaction-based) pipeline only — see "Second pipeline: exogenous
-(external) events" below for the parallel market/political-event path,
-and `docs/artifacts/pipeline-blueprint.html` for a presentation-oriented
-version of this same diagram.
+Dashed = not executed / access-restricted. No box above ever reads
+`protected_evaluator_only/` — only `evaluation/evaluate.py` (legacy
+pipeline, see the appendix) has that permission, and it's physically
+separate code. This diagram is the FDM-aligned build; see the appendix
+at the end of this file for the original legacy-schema pipeline it was
+built alongside.
 
-## Configured source -> canonical batches -> detection -> ranking -> narrative -> digest
-
-This is the actual data path, matching the governing project instructions:
+## Configured source → domain registry → detection → correlation → sinks
 
 1. **Configured source** (`datainsights/sources/`): a `DataSource`
-   implementation — `OfflineLocalSource` (DuckDB over local CSVs, active
-   today) or `SnowflakeSource` (same interface, NOT RUN — no credentials
-   available to this session). Detection code depends only on the
-   `DataSource` ABC (`datainsights/sources/base.py`), never on a specific
-   backend's client library — swapping backends requires zero changes to
-   `detection_engine/`.
-2. **Canonical batches**: every read is validated against
-   `config/entities.yaml` — a logical contract (grain, primary key, time/
-   currency semantics, required vs. optional columns, missing-data policy)
-   that both source backends must satisfy. Changing a physical table name
-   doesn't automatically make arbitrary data fit this contract; a missing
-   required column raises `DataSourceError`.
-3. **Deterministic trigger detection**
-   (`detection_engine/large_incoming_payment.py`): point-in-time-correct
-   (baselines use only strictly-prior transactions — verified by test),
-   idempotent (same `detection_id` on rerun), with an explicit cooldown
-   suppression pass. Spec written before code:
-   `docs/detector_spec_large_incoming_payment.md`.
-4. **Transparent baseline ranking** (`datainsights/ranking.py`): an
-   explicit, auditable formula (magnitude component + recency decay, both
-   weighted and clipped to `[0,1]`) — no ML. Every component is visible in
-   the output, not folded into an opaque score.
-5. **Evidence-grounded narrative** (`datainsights/narrative/`): a
-   deterministic template baseline, and a local-Ollama structured-output
-   narrator that can only state facts present in a minimal evidence packet
-   (`datainsights/narrative/evidence.py`). Deterministic validation
-   (schema conformance, numeric consistency against the evidence packet,
-   a banned-claims check for unsupported business interpretations like
-   "tender") runs before any LLM output is accepted; failure falls back to
-   the template, never raises, never emits unvalidated output.
-6. **RM review digest** (`datainsights/digest.py`): a local markdown file
-   under `var/insights/`. No delivery anywhere — reading it is a manual
-   step.
+   implementation — `FdmLocalSource` (DuckDB over local CSVs, bi-temporal
+   as-at joins, active today) or `FdmSnowflakeSource` (same interface,
+   NOT RUN — no credentials available). Detector/agent code depends only
+   on the `DataSource` interface, never a file path or Snowflake client —
+   `tests/test_fdm_source_conformance.py` proves the two sources can't
+   silently drift apart.
+2. **Domain registry** (M7, `docs/adding_a_new_domain.md`) — two halves,
+   split deliberately:
+   - **Data half** (`config/domains_fdm.yaml` + `datainsights/domain_registry.py`):
+     product codes, allowed RM actions, per-signal-type NBA category +
+     hypothesis, and (M8) which signal types are `ambiguous` with a
+     `category_options` set for the investigator agent.
+   - **Code half** (`agents/domain_registry.py`): which Strands tool
+     factory and which detector module each domain owns, registered by
+     one `register()` call per domain at the bottom of `agents/tools.py`.
+   - Together: adding a domain (proven with Risk's `rating_downgrade` in
+     M8) needs a YAML block + one `register()` call — zero edits to
+     `agents/orchestrator.py`, `agents/domain_agent.py`, or
+     `datainsights/correlation/hypothesis.py`.
+3. **Deterministic detection** (`detection_engine/`): 7 FDM detectors
+   (Deposits: `cash_buildup`, `dormancy`, `revenue_pattern_change`;
+   Lending: `facility_utilization_spike`, `facility_maturity_approaching`,
+   `fixed_rate_expiry`, `collateral_coverage_drop`) plus Risk's
+   `rating_downgrade` — same `DetectorConfig`/`detect()`/
+   `apply_cooldown()`/`to_signal()` shape throughout. Two
+   (`cash_buildup`, `revenue_pattern_change`) carry an opt-in SLOT E2
+   baseline switch (`baseline: deterministic | isolation_forest` in
+   `config/rules.yaml`, default deterministic) — see "ML baseline slot"
+   below.
+4. **Agent narration** (`agents/domain_agent.py`): gathers every
+   detector's evidence deterministically, then narrates it with local
+   Ollama — **no tool access for the narrating call** (M8/A0: giving the
+   LLM the same tools it had already been given the answers from meant
+   it ran them again for zero benefit). Schema, numeric-consistency,
+   allowed-action, and banned-term validation before any LLM output is
+   accepted; template fallback on any failure, never an unvalidated
+   claim.
+5. **Cross-domain correlation** (`datainsights/correlation/`): Signal
+   Bus groups every domain's signals per client; the Hypothesis
+   Assembler applies the decision record's four composition rules
+   (RISK_REVIEW suppression, multi-domain confirmation, exogenous
+   alignment, decomposable strength score) into one `Recommendation`;
+   de-dup keeps the strongest per (client, category). This is the one
+   layer with no legacy-pipeline equivalent — it combines multiple
+   domains' evidence into one recommendation per **client**, not one per
+   detection.
+6. **Sinks** (`datainsights/sinks/`): every consumer renders the SAME
+   `Recommendation` — the RM worklist CSV/digest
+   (`datainsights/fdm_worklist.py`), a MIMO-shaped JSON
+   (`mimo_placeholder.py`), and a Pega event mock
+   (`pega_event_mock.py`). None computes its own category, hypothesis,
+   or sizing (`tests/test_sink_contract.py`). `datainsights/sinks/key_mapping.py`
+   is the one isolated D7 boundary module for `PRTY_ID` → external key
+   translation (identity mock today).
 
-Orchestration (`datainsights/runner.py`, invoked via `datainsights/cli.py`)
-is the single run-once entry point — the same function a future scheduler
-or service wrapper would call. It's a thin composition of the pieces
-above, not a framework.
+Orchestration (`agents/orchestrator.py`'s `evaluate_client`/
+`evaluate_book`) is the single entry point AgentCore Runtime would
+invoke, a batch job would loop, or a future Snowflake-backed run would
+call with a different `DataSource` — same code path in all three. Two
+modes: `narrate=True` (live LLM per domain, for a handful of clients) and
+`narrate=False` (deterministic only, whole-book batch) produce the
+**identical** `Recommendation` — `tests/test_orchestrator.py` asserts
+this mechanically.
 
-## Second pipeline: exogenous (external) events
+## Where LLM agents sit (docs/agentic_plan.md, M8)
 
-Everything above reacts to a client's **own** transaction data — an
-endogenous signal. `external_events/` runs a parallel pipeline that
-reacts to **external** market/political/industry events instead, matched
-to clients by sector and country rather than by transaction pattern:
+| Agent | Scope | Can it change a category/score? |
+|---|---|---|
+| `domain_agent.py` (`DomainAgent`) | Narrates one domain's already-computed evidence for one client. No tools. | No — never |
+| `event_extraction_agent.py` (A1) | Unstructured text → validated `ExogenousEvent`. No client data. | No — feeds `exposure_qualifier.qualifies()`, which is deterministic |
+| `investigator_agent.py` (A2) | Read-only tools scoped to one client, for a `Recommendation` flagged `ambiguous`. | Proposes a refinement only — an RM confirming it is what changes the category |
+| `rm_copilot_agent.py` (A3) | One worklist row, no tool, no `DataSource` access. | No — answers questions, captures RM feedback (`datainsights/rm_feedback.py`) |
 
-```
-SimulatedExternalEventSource   (datainsights/sources/external_event_source.py)
-  -> detection_engine/external_macro_event.py   (sector/country match + cooldown)
-  -> datainsights/ranking.py::rank_macro()      (severity-based, shares the
-                                                  same magnitude+recency shape
-                                                  as rank(), different inputs)
-  -> datainsights/narrative/macro_narrator.py   (same validate-or-template-
-                                                  fallback pattern, hedged-
-                                                  language validator instead
-                                                  of a numeric-consistency one)
-  -> datainsights/digest.py                     (same digest renderer, generalized
-                                                  to accept either detector family)
-```
+Every agent above shares one discipline: validate the model's output in
+code (schema, numeric traceability to evidence, banned-term check), and
+fall back to a deterministic template/fact-list on any failure — never
+an unvalidated claim reaching an RM. `agents/README.md` has the current
+file-by-file status and the AgentCore governance mapping.
 
-Each simulated event type carries the real free API it maps to (ECB SDMX,
-TED, Eurostat, EU sanctions list/OpenSanctions, EUR-Lex, GDELT, EM-DAT) and
-a `source_context` field naming that source's actual shape — structured/
-real-time vs. lagged vs. needs LLM extraction first — so a reviewer sees
-the honest limitation of each real source, not just its name. Run:
-`python -m external_events.demo_scenario`. Full catalog and compliance
-notes: `external_events/README.md`,
-[`docs/compliance_and_industry_context.md`](compliance_and_industry_context.md).
+## ML baseline slot (SLOT E2, `docs/decision_record.md` Tab 6)
 
-## Unification: the RM worklist
-
-Both pipelines write detections into the same `var/state.sqlite`, but an
-RM doesn't want two separate lists. `datainsights/worklist.py` reads both,
-tags every row with one of six categories (`FINANCING_NEED`,
-`TREASURY_OPPORTUNITY`, `RISK_REVIEW`, `ADVISORY_ONLY`, `HEDGING_NEED`,
-`CAPEX_FINANCING`), and writes one row-per-client CSV — client profile +
-recommended action + category + evidence, ranked. Run:
-`python -m datainsights.build_worklist`. Category definitions and real
-counts from a live run: `docs/artifacts/output-reference.html`.
+`datainsights/ml/slots.py` defines the four typed extension-slot
+interfaces from the decision record; `datainsights/ml/baselines.py`
+implements the one built so far — `IsolationForestBaseline`, an
+outlier-robust alternative to `DeterministicBaseline`'s per-client
+median/MAD. Opt-in per detector (`baseline: isolation_forest` in
+`config/rules.yaml`), deterministic stays the default. Measured, not
+assumed: `datainsights/ml/compare_baselines.py` runs both through the
+real detectors against real generated data; `scale_evaluation.py` does
+the same at a 300-client/4-year scale and writes a versioned run
+manifest (`var/ml_runs/*.json`) — the honest substitute for "persisting
+a model," since these baselines are stateless and re-fit per call by
+design, not trained-and-saved. Current verdict (re-measured after a
+genuine performance fix, both disclosed in `docs/current_state.md`):
+keep deterministic as default — disagreement with the challenger isn't
+yet evidence of improvement on data with no real outcome labels to check
+against.
 
 ## Config / profile system
 
 `datainsights/config.py` defines small, typed (Pydantic) models for a
 profile — runtime target, source backend, analytics backend, LLM/judge
-config, state/output paths, monitor settings, cost policy. Two profiles
-exist: `offline_ollama` (active, default) and `snowflake_trial_ollama`
-(inactive until you select it and supply env vars). A hard-coded validator
-layer — not just a YAML default — refuses:
+config, state/output paths, monitor settings, cost policy. A hard-coded
+validator layer — not just a YAML default — refuses:
 - `paid_llm_calls_allowed: true` / `paid_cloud_services_allowed: true`
 - an Ollama model tag ending `-cloud` (routes to Ollama's cloud service)
 - a non-localhost Ollama `base_url`
-- a Snowflake profile with any of its six required env vars unset (fails
-  closed with a specific error naming the missing variable, never falls
-  back to offline data silently)
+- a Snowflake profile with any required env var unset (fails closed with
+  a specific error naming the missing variable)
 
-These are enforced in code (`_model_validator`/`ValueError`), so editing a
-profile YAML alone cannot re-enable any of them.
+These are enforced in code, so editing a profile YAML alone cannot
+re-enable any of them. `agents/model_factory.get_model()` routes through
+the same `LLMConfig` validator for every agent in this build.
 
 ## Leakage isolation
 
-`data_generator/output/protected_evaluator_only/trigger_events.csv` is
-ground truth for **evaluating** a detector, never an input to one. Three
-independent layers enforce this:
-1. **Directory boundary** — it physically lives in a separate subfolder,
-   documented in that folder's own README.
-2. **Contract boundary** — `config/entities.yaml` simply doesn't define a
-   `trigger_events` entity; `OfflineLocalSource._entity_spec` raises if
-   asked for one.
-3. **Code boundary** — `OfflineLocalSource.__init__` refuses outright to
-   construct a source rooted at any path containing
-   `protected_evaluator_only`.
+`data_generator/output_fdm/protected_evaluator_only/` (and the legacy
+pipeline's equivalent) is ground truth for **evaluating** a detector,
+never an input to one. Three independent layers enforce this: a
+directory boundary, a contract boundary (`config/entities_fdm.yaml`
+simply doesn't define a labels entity), and a code boundary
+(`FdmLocalSource.__init__` refuses to construct a source rooted at any
+path containing `protected_evaluator_only`). No agent introduced in M8
+has any import path to this directory either — `event_extraction_agent.py`,
+`investigator_agent.py`, and `rm_copilot_agent.py` all read from
+generated data, worklist rows, or raw notice text, never labels.
 
-All three are tested (see the leakage-guard checks run during Phase A/B
-build; not yet formalized as a `pytest` file — see Known Gaps below).
-`evaluation/evaluate.py` is the one module allowed to read this file, and
-it's physically separate from `detection_engine/` — the detector package
-has no import path to it.
+## State, traceability, and feedback
 
-**Disclosed limitation**: this coding session authored the injection logic
-in `generate_data.py` and has directly inspected `trigger_events.csv`.
-That's contamination regardless of the directory boundary — see the
-README in `protected_evaluator_only/` for what that does and doesn't
-invalidate.
+- **Detection idempotency**: `detection_id` is deterministic per
+  detector, so a rerun on unchanged data produces zero new detections.
+- **Agent audit trail** (M8/A0, `datainsights/agent_trace.py`): every
+  narration records its model label, latency, and whether it fell back
+  to a template, keyed on `recommendation_id` — the AgentCore Phase 2
+  "audit trail"/"data lineage" requirement, built in rather than
+  retrofitted.
+- **RM feedback capture** (M8/A3, `datainsights/rm_feedback.py`): the
+  live Customer Engaged / Not Appropriate / Remind Me Later taxonomy,
+  captured against `recommendation_id` in the Streamlit dashboard today
+  — the actual start of the D6 feedback loop that SLOT E4's propensity
+  model would eventually train on (still correctly unbuilt — blocked on
+  real access, not on this capture existing).
 
-## State and idempotency
-
-`datainsights/state.py` — SQLite (`var/state.sqlite`), three tables:
-`runs` (audit history), `detections` (one row per `detection_id`, upserted
-not duplicated — reruns on an unchanged snapshot produce zero new rows,
-verified), `narratives` (keyed by evidence hash + prompt/model/schema
-version — unchanged evidence never regenerates a narrative, verified: a
-cached rerun dropped from ~60s to ~7s for 15 narratives).
-
-## Component -> file map
+## Component → file map
 
 | Component | File(s) |
 |---|---|
-| Source contract | `config/entities.yaml` |
+| Source contract | `config/entities_fdm.yaml` |
+| Domain registry (data) | `config/domains_fdm.yaml`, `datainsights/domain_registry.py` |
+| Domain registry (code) | `agents/domain_registry.py`, registrations in `agents/tools.py` |
 | DataSource interface | `datainsights/sources/base.py` |
-| Offline adapter | `datainsights/sources/offline_local.py` |
-| Snowflake adapter (NOT RUN) | `datainsights/sources/snowflake_source.py` |
+| Local adapter | `datainsights/sources/fdm_local.py` |
+| Snowflake adapter (NOT RUN) | `datainsights/sources/fdm_snowflake.py` |
 | Typed config | `datainsights/config.py`, `config/profiles/*.yaml` |
-| Detector | `detection_engine/large_incoming_payment.py` |
-| Detector spec | `docs/detector_spec_large_incoming_payment.md` |
-| Ranking | `datainsights/ranking.py` |
-| Narrative | `datainsights/narrative/` |
-| Judge | `datainsights/judge/` |
-| State | `datainsights/state.py` |
-| Digest | `datainsights/digest.py` |
-| Orchestration | `datainsights/runner.py`, `datainsights/cli.py` |
-| Status view | `datainsights/status.py` |
-| Evaluation (separate role) | `evaluation/evaluate.py` |
-| Detector tests | `tests/test_large_incoming_payment.py` |
-| Rule/ranking/narrative params | `config/rules.yaml` |
+| Detectors | `detection_engine/*.py` (7 FDM + `rating_downgrade`; `pd_migration` built, unwired — needs `PARTY_METRIC`) |
+| Narrating agent | `agents/domain_agent.py` |
+| Event extraction (A1) | `external_events/event_extraction_agent.py`, `extracted_event_store.py`, `ingest_notices.py` |
+| Investigator (A2) | `agents/investigator_agent.py` |
+| RM copilot (A3) | `agents/rm_copilot_agent.py` |
+| Agent audit trail | `datainsights/agent_trace.py` |
+| RM feedback capture | `datainsights/rm_feedback.py` |
+| Correlation | `datainsights/correlation/` (`signal_bus.py`, `hypothesis.py`, `dedupe.py`) |
+| Sinks | `datainsights/sinks/` (`fdm_worklist.py` is separate, RM-facing) |
+| ML baseline slot | `datainsights/ml/slots.py`, `baselines.py`, `compare_baselines.py`, `scale_evaluation.py` |
+| Orchestration | `agents/orchestrator.py`, demo entry points `agents/demo_*.py` |
+| Dashboard | `dashboard/app.py` |
+| Detector tests | `tests/test_*.py` (one file per detector/module) |
+| Rule/baseline/domain params | `config/rules.yaml`, `config/domains_fdm.yaml` |
 
 ## Design decisions and why
 
 - **DuckDB for local analytics**: fast columnar SQL over CSVs with zero
-  server process, matches the "portable deterministic Python core"
-  instruction, and its SQL surface is close enough to Snowflake's to keep
+  server process; its SQL surface is close enough to Snowflake's to keep
   detector logic backend-agnostic.
-- **SQLite for state**: zero-dependency, transactional, sufficient for a
-  single-machine POC; instructions already flag a transactional remote
-  replacement (DynamoDB/Postgres) as a later AWS-migration concern, not
-  now.
-- **Pydantic for config**: gives fail-closed validation with actionable
-  errors for free, rather than hand-rolled dict-checking.
-- **A different model for judge vs. narrator**: reduces (does not
-  eliminate) correlated errors between generation and evaluation — both
-  are still local Ollama models with unknown training-data overlap; this
-  is disclosed in `datainsights/judge/offline_judge.py`, not hidden.
-- **One detector, not several, in this pass**: "prefer a small,
-  understandable vertical slice" — a second detector should reuse the same
-  `DataSource`/ranking/narrative machinery once this one is trusted, not
-  trigger a rewrite.
+- **Strands, not LangGraph, for every agent** (`docs/agentic_plan.md`):
+  already in the repo and verified live; Ollama/llama.cpp are first-class
+  Strands providers, so the same code runs local now and on AgentCore
+  later by swapping the provider; AgentCore itself lists Strands
+  explicitly.
+- **Two-half domain registry, not one**: the data half
+  (`datainsights/domain_registry.py`) must give correct answers even
+  when nothing under `agents/` has been imported (`datainsights/correlation/hypothesis.py`
+  is used standalone by `tests/test_correlation.py`); the code half
+  (`agents/domain_registry.py`) holds Python callables that only the
+  agent layer needs. Splitting them avoids an import-order dependency
+  that would otherwise silently break the data half's guarantees.
+- **Stateless, per-call ML baselines, not trained-and-saved models**: a
+  baseline that re-fits from a client's own history on every call can
+  never leak across clients or across time — the tradeoff, measured and
+  fixed once found (`docs/current_state.md`), is that fit cost has to be
+  bounded explicitly (tree count, trailing window) rather than amortized
+  by training once.
+- **The narrowest possible scope for the agent an RM talks to directly**:
+  `rm_copilot_agent.py` has no tool and no `DataSource` access at all —
+  deliberately tighter than every other agent in this build, since it's
+  the one a person interacts with rather than just reads validated
+  output from.
 
 ## Local machine vs. Snowflake — what actually changes
 
 Everything above runs today on a single MacBook: DuckDB over local CSVs,
-SQLite for state, local Ollama for narrative/judge — no server process,
-no account, no credentials. Swapping in Snowflake later changes exactly
-one box in the diagram (`SnowflakeSource` implementing the same
-`DataSource` ABC as `OfflineLocalSource`) — detection, ranking, narrative,
-and worklist code do not change, per the config/profile system above.
-What Snowflake would add that local can't: a shared/concurrent data
-store, `External Access Integration` for pulling real external-event APIs
-server-side, Iceberg/Glue catalog integration for AWS-side tables without
-moving data. See `docs/artifacts/deployment-options.html` for the full
-three-way comparison (MacBook / Snowflake+Glue / Kiro-as-dev-client) with
-exactly where ML/statistical/LLM logic sits in each, and
-`docs/snowflake_setup.md` for the actual account setup steps.
+local Ollama for narration — no server process, no account, no
+credentials. Swapping in Snowflake later changes exactly one box in the
+diagram (`FdmSnowflakeSource` implementing the same `DataSource`
+interface as `FdmLocalSource`) — detector, agent, correlation, and sink
+code do not change, per the domain registry and config/profile system
+above.
 
-## Known gaps (see also `docs/current_state.md`)
+## Where this design goes next
 
-- No replay/simulation mode with a virtual clock or incremental
-  checkpoints yet — `--as-of` gives a single point-in-time cut, which is
-  the primitive that machinery would be built from.
-- No golden conformance tests comparing `OfflineLocalSource` and
-  `SnowflakeSource` output on identical data (the latter has never run).
-- Leakage-boundary checks were run ad hoc during development, not yet
-  captured as a permanent `pytest` regression test.
-- No coding-process benchmark (project instructions §9) has been started.
+`docs/generalization_plan.md` is the plan to make the layers above
+schema-agnostic, make exogenous event types registrable in YAML, and run
+the same code locally and on AgentCore via profile-driven composition.
+Two pieces of it are built and verified (`docs/current_state.md`'s M9
+section has the full detail):
+
+- **`datainsights/runtime.py`'s `build_runtime(profile)`** is now the
+  single composition point every entry point uses (both demos, the
+  entrypoint, the ML scripts, the dashboard) -- source, model, event
+  source, state, and output all come from one profile
+  (`config/profiles/fdm_local.yaml`), not six hand-wired constructions.
+  Cloud backends (`s3_parquet`, `glue_athena`, `dynamodb`, `model_gateway`)
+  validate and construct from a profile today; each raises
+  `NotImplementedError` naming its blocking reason when actually
+  selected -- never a silent local fallback.
+- **`datainsights/semantic/`** (`CanonicalSource` + a binding loader +
+  a config-time validator) reads real generated FDM data through
+  `config/bindings/fdm.yaml` into the canonical column names
+  `config/semantic_model.yaml` defines -- renames, value maps,
+  bi-temporal as-at collapse, and multi-hop joins all tested against
+  real data. **Not yet wired to anything**: `detection_engine/`,
+  `agents/tools.py`, `external_events/exposure_qualifier.py`, and
+  `datainsights/fdm_worklist.py` all still depend on physical FDM
+  column names directly -- the rewire that makes that go away, and the
+  second (`legacy`) binding that proves it, are the next scoped pieces
+  of Phase 1, not done yet.
+
+Read `docs/generalization_plan.md` before extending any component above,
+and its build-status notes before assuming a phase is finished.
+
+## Known gaps
+
+- `pd_migration.py` (Risk) is built and tested but unwired — needs
+  `PARTY_METRIC`, which doesn't exist in the generated dataset or its
+  contract; not invented, per `docs/adding_a_new_domain.md`'s own rule.
+- A2's investigator agent had a live run propose a category that
+  contradicted its own stated evidence — current validation checks the
+  category is in the allowed set, not that the reasoning supports it.
+  Not fixed; see `docs/agentic_plan.md`'s A2 section.
+- No golden conformance tests comparing `FdmLocalSource` and
+  `FdmSnowflakeSource` output on identical data (the latter has never
+  run — no credentials).
+- Treasury domain: no confirmed client-facing data source exists at all
+  (decision record's own Phase 6 finding) — not attempted.
+- AgentCore Runtime, Model Gateway, real MIMO/Pega/S3 publish: all
+  contract-and-mock only, per `CLAUDE.md`, until explicitly authorized.
+
+## Appendix: the original legacy-schema pipeline
+
+A separate, still-passing pipeline (`datainsights/cli.py`,
+`detection_engine/large_incoming_payment.py`,
+`detection_engine/external_macro_event.py`, `datainsights/narrative/`,
+`evaluation/evaluate.py`) predates the FDM build above and is kept only
+because CLAUDE.md's working style ("continue from existing work, don't
+rebuild") means it was never a target to replace, not because it adds
+capability the FDM build lacks. It reads its own `OfflineLocalSource`/
+`config/entities.yaml` contract, has its own `large_incoming_payment`
+MAD-based detector and `external_macro_event` sector/country detector,
+and writes to a separate `datainsights/worklist.py`/`digest.py`/
+`state.py`. It is not extended or referenced by anything in the FDM
+pipeline above, and new work should not add to it. Run `python -m
+datainsights.cli` / `python -m pytest tests/test_large_incoming_payment.py
+tests/test_external_macro_event.py` if you need to touch it; otherwise
+treat everything above this appendix as the current design.

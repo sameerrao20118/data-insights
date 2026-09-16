@@ -29,14 +29,27 @@ PROFILES_DIR = REPO_ROOT / "config" / "profiles"
 
 
 class RuntimeConfig(BaseModel):
-    target: Literal["local"] = "local"
+    # "agentcore" validates and constructs (Phase 3, generalization_plan.md);
+    # actually running under AgentCore Runtime is NOT RUN until deployed and
+    # authorized -- this literal exists so a profile can be written and
+    # tested for shape now, not so anything targets AWS today.
+    target: Literal["local", "agentcore"] = "local"
 
 
 class SourceConfig(BaseModel):
-    backend: Literal["offline_local", "snowflake"]
+    # s3_parquet / glue_athena: construct and validate; the adapters raise
+    # NotImplementedError with the exact blocking reason (see
+    # datainsights/sources/s3_parquet_source.py, glue_athena_source.py) --
+    # never a silent fallback to local data. See generalization_plan.md Phase 3.
+    backend: Literal["offline_local", "snowflake", "s3_parquet", "glue_athena"]
     entity_map_ref: str
     access: Literal["read_only"] = "read_only"
     cost_policy: str
+    # Which semantic binding (config/bindings/<name>.yaml) maps this source's
+    # physical entities to the canonical model. None = legacy pipeline, which
+    # predates the semantic model and reads entity_map_ref directly.
+    # generalization_plan.md Phase 1.
+    binding: Optional[str] = None
 
     # offline_local
     data_dir: Optional[str] = None
@@ -48,12 +61,42 @@ class SourceConfig(BaseModel):
     query_timeout_seconds: Optional[int] = None
     statement_row_limit: Optional[int] = None
 
+    # s3_parquet
+    s3_uri: Optional[str] = None
+    # glue_athena
+    glue_database: Optional[str] = None
+    athena_workgroup: Optional[str] = None
+
     @model_validator(mode="after")
     def _check_backend_requirements(self) -> "SourceConfig":
         if self.backend == "offline_local" and not self.data_dir:
             raise ValueError("offline_local source requires data_dir")
         if self.backend == "snowflake" and not self.connection_ref:
             raise ValueError("snowflake source requires connection_ref")
+        if self.backend == "s3_parquet" and not self.s3_uri:
+            raise ValueError("s3_parquet source requires s3_uri (s3://... or file://... for local proof)")
+        if self.backend == "glue_athena" and not self.glue_database:
+            raise ValueError("glue_athena source requires glue_database")
+        return self
+
+
+class EventSourceConfig(BaseModel):
+    """Where exogenous events come from -- generalization_plan.md Phase 2.
+    Optional on every profile; a profile with no events block simply runs
+    with no exogenous checks (today's legacy-pipeline behaviour)."""
+    backend: Literal["csv", "s3", "snowflake"] = "csv"
+    path: Optional[str] = None       # csv
+    s3_uri: Optional[str] = None     # s3 (NOT RUN until Phase 3)
+    connection_ref: Optional[str] = None  # snowflake (NOT RUN until Phase 3)
+
+    @model_validator(mode="after")
+    def _check_backend_requirements(self) -> "EventSourceConfig":
+        if self.backend == "csv" and not self.path:
+            raise ValueError("csv event source requires path")
+        if self.backend == "s3" and not self.s3_uri:
+            raise ValueError("s3 event source requires s3_uri")
+        if self.backend == "snowflake" and not self.connection_ref:
+            raise ValueError("snowflake event source requires connection_ref")
         return self
 
 
@@ -62,8 +105,11 @@ class AnalyticsConfig(BaseModel):
 
 
 class LLMConfig(BaseModel):
-    provider: Literal["ollama"]
-    base_url: str
+    # "model_gateway": constructs and validates; agents/model_factory.get_model()
+    # raises NotImplementedError for it until Stage 3 is authorized (D4,
+    # docs/decision_record.md) -- never silently routes to a real gateway.
+    provider: Literal["ollama", "model_gateway"]
+    base_url: Optional[str] = None
     model: str
     allow_remote_inference: bool = False
     allow_paid_fallback: bool = False
@@ -84,11 +130,14 @@ class LLMConfig(BaseModel):
                 f"model '{self.model}' is an Ollama cloud-routed tag, not local "
                 "inference -- not permitted under this project's cost policy"
             )
-        if not self.base_url.startswith("http://127.0.0.1") and not self.base_url.startswith("http://localhost"):
-            raise ValueError(
-                f"base_url '{self.base_url}' is not localhost -- refusing a "
-                "non-local Ollama endpoint under this project's cost policy"
-            )
+        if self.provider == "ollama":
+            if not self.base_url:
+                raise ValueError("ollama provider requires base_url")
+            if not self.base_url.startswith("http://127.0.0.1") and not self.base_url.startswith("http://localhost"):
+                raise ValueError(
+                    f"base_url '{self.base_url}' is not localhost -- refusing a "
+                    "non-local Ollama endpoint under this project's cost policy"
+                )
         return self
 
 
@@ -99,13 +148,34 @@ class JudgeConfig(BaseModel):
 
 
 class StateConfig(BaseModel):
-    backend: Literal["sqlite"] = "sqlite"
-    path: str
+    # "dynamodb": constructs; datainsights.state_store.DynamoDBStateStore
+    # raises NotImplementedError until Phase 3 is run for real. See
+    # generalization_plan.md.
+    backend: Literal["sqlite", "dynamodb"] = "sqlite"
+    path: Optional[str] = None
+    table_name: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _check_backend_requirements(self) -> "StateConfig":
+        if self.backend == "sqlite" and not self.path:
+            raise ValueError("sqlite state requires path")
+        if self.backend == "dynamodb" and not self.table_name:
+            raise ValueError("dynamodb state requires table_name")
+        return self
 
 
 class OutputConfig(BaseModel):
-    backend: Literal["local"] = "local"
-    path: str
+    backend: Literal["local", "s3"] = "local"
+    path: Optional[str] = None
+    s3_uri: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _check_backend_requirements(self) -> "OutputConfig":
+        if self.backend == "local" and not self.path:
+            raise ValueError("local output requires path")
+        if self.backend == "s3" and not self.s3_uri:
+            raise ValueError("s3 output requires s3_uri")
+        return self
 
 
 class MonitorConfig(BaseModel):
@@ -140,7 +210,8 @@ class Profile(BaseModel):
     source: SourceConfig
     analytics: AnalyticsConfig
     llm: LLMConfig
-    judge: JudgeConfig
+    judge: Optional[JudgeConfig] = None
+    event_source: Optional[EventSourceConfig] = None
     state: StateConfig
     output: OutputConfig
     monitor: MonitorConfig

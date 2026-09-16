@@ -1,0 +1,221 @@
+# FDM-shaped logical source contract -- parallel to config/entities.yaml,
+# not a replacement for it. See docs/fdm_reference.md for the physical
+# model this contract mirrors (NatWest FDM, schema ENT_PRD.TIER0_PRS) and
+# docs/decision_record.md for why this exists as a separate, additive path
+# rather than an in-place migration of the legacy contract.
+#
+# Every entity carries EFFECTIVE_START_DT / EFFECTIVE_END_DT -- a
+# deliberately simplified subset of the real EDI bi-temporal audit columns
+# (EFFECTIVE_START/END_DT/TM, LAST_UPDATED_DT/TM, CRT_DT/TM, EDI_FD_ID,
+# EDI_FD_RUN_ID, DTST_ID, REC_ID). docs/decision_record.md's "bi-temporal
+# is load-bearing" note is explicit: the generator must emit multiple
+# effective-dated versions of slowly-changing rows or an as-at filter is
+# never actually exercised. This contract requires it; data_generator/fdm/
+# generate_fdm.py is the thing that must honor it.
+#
+# Column provenance: DDL confirmed in the captured screenshots is marked
+# "confirmed" below. Columns whose confirmed DDL was captured but with
+# invented VALUE SETS (see data_generator/fdm/code_domains.py) are marked
+# "confirmed column, invented values". Whole tables with no captured
+# column DDL at all (only appeared as a name in an arrow diagram) are
+# marked "invented table" -- COLLATERAL_ITEM, COLLATERAL_ITEM_VALUE,
+# AGREEMENT_COLLATERAL_ITEM, PARTY_DEMOGRAPHIC, PARTY_LOCATOR.
+#
+# Deferred entirely, not contracted here, with reasons:
+#   PARTY_METRIC, PARTY_RELATED, CRADLE *_MODEL_DATA (LC_MODEL_DATA etc.)
+#     -- no column DDL captured; risk-domain detectors (rating_downgrade,
+#     pd_migration, concentration_risk) are out of scope for this pass.
+#   PARTY_GROUP, PARTY_TO_PARTY_GROUP, PARTY_TO_PARTY_ASSET,
+#   PARTY_ASSET, ASSET_VALUE -- no detector in scope needs them yet;
+#     add when one does, per the existing entities.yaml convention.
+#   Any TILAPI / treasury entity -- docs/decision_record.md Phase 6 status
+#     is "blocked... no confirmed C&I client-facing treasury source
+#     found... do not build a detector against it." Not contracted.
+#   FSA_PRD_FINCRIME, FSA_PRD_FC_ANALYTICS, PEP_PRS, any *_XDO share
+#     -- hard boundary (CLAUDE.md, docs/decision_record.md D5). Never
+#     contracted, never read.
+#
+# Every entity carries a `domain:` tag -- kernel (Tier 1 FDM classes, used
+# everywhere: PARTY, AGREEMENT, EVENT_FINANCIAL, etc. -- see
+# docs/fdm_reference.md's 3-tier classification) or a named domain
+# extension (lending -- Tier 3, MORTGAGE_AGREEMENT/COLLATERAL_*). This is
+# not decorative: FdmLocalSource resolves a physical path as
+# `{data_dir}/{domain}/{physical_table}.csv`, so `domain` IS the thing
+# that determines where a table's data physically lives -- one shared
+# folder for kernel entities everyone reads, one folder per domain
+# extension. This is the extensibility point the whole contract exists
+# for: a future SnowflakeSource honoring this SAME `domain` field maps it
+# to a schema or database instead of a folder (e.g. kernel ->
+# ENT_PRD.TIER0_PRS, lending -> a domain-specific NPDM schema) --
+# detector/agent/correlation code reads entities by NAME through the
+# DataSource interface and never sees a file path or a schema name, so
+# swapping the backend requires zero changes above this layer.
+
+contract_version: 1
+
+entities:
+  PARTY:
+    physical_table: party
+    domain: kernel
+    grain: one row per party per effective-dated version (bi-temporal Type 2 SCD)
+    primary_key: [PRTY_ID, EFFECTIVE_START_DT]
+    required_columns:
+      PRTY_ID: {type: string, nullable: false}
+      EFFECTIVE_START_DT: {type: date, nullable: false}
+      EFFECTIVE_END_DT: {type: date, nullable: true, format: "null = current version"}
+      PRTY_TYP_CD: {type: string, nullable: false, allowed: [ORG, IND]}
+      PRTY_SBTYP_CD: {type: string, nullable: false}
+      RSK_GRD_CD: {type: string, nullable: false}
+      RSK_GRD_VAL: {type: int, nullable: false, format: "1 (best) .. 10 (worst)"}
+      RSK_GRD_DT: {type: date, nullable: false}
+      PRTY_SGMNT_CD: {type: string, nullable: false, allowed: [SME, MID, LRGE, INST]}
+      HIGH_RSK_CUST_IND: {type: string, nullable: false, allowed: ["Y", "N"]}
+    time_semantics:
+      event_time_field: EFFECTIVE_START_DT
+      ingestion_time_field: null
+    missing_data_policy: "A PARTY row with EFFECTIVE_END_DT before the
+      requested as-at date is historical, not missing -- the as_at query
+      helper (datainsights/sources/fdm_local.py) must pick the version
+      valid at that date, never the latest by default."
+    boundary_note: "HIGH_RSK_CUST_IND is the one permitted read from the
+      FinCrime-adjacent surface (docs/decision_record.md Tab 3, 'the one
+      permitted read'). Code may observe it and use it to SUPPRESS a
+      revenue recommendation. It must never be ranked on, correlated with
+      an event type, or surfaced in narrative text. Enforce this in the
+      correlation layer (M6), not just by convention."
+
+  PARTY_DEMOGRAPHIC:
+    physical_table: party_demographic
+    domain: kernel
+    grain: one row per party (current state only -- sector rarely changes)
+    primary_key: [PRTY_ID]
+    required_columns:
+      PRTY_ID: {type: string, nullable: false}
+      NACE_SECTION_CD: {type: string, nullable: false, format: "single letter, Eurostat NACE Rev.2"}
+      NACE_CODE: {type: string, nullable: false, format: "4-digit NACE Rev.2"}
+      SECTOR_NM: {type: string, nullable: false}
+    note: "Invented table -- appears in docs/fdm_reference.md only as
+      'PARTY_DEMOGRAPHIC (NACE)' in an FK-children list, no column DDL
+      captured. NACE_SECTION_CD/NACE_CODE reuse data_generator's existing
+      real Eurostat NACE Rev.2 codes (see generate_data.py SECTORS); only
+      the table/column shape is invented, not the classification values."
+
+  PARTY_LOCATOR:
+    physical_table: party_locator
+    domain: kernel
+    grain: one row per party (current state only)
+    primary_key: [PRTY_ID]
+    required_columns:
+      PRTY_ID: {type: string, nullable: false}
+      COUNTRY_CD: {type: string, nullable: false, format: "ISO 3166-1 alpha-2"}
+    note: "Invented table -- same 'FK child, no DDL' status as
+      PARTY_DEMOGRAPHIC. Used by external_events/exposure_qualifier.py
+      for the geography-match step of exposure qualification."
+
+  PARTY_AGREEMENT:
+    physical_table: party_agreement
+    domain: kernel
+    grain: one row per party-to-facility relationship
+    primary_key: [PRTY_ID, AGRMNT_ID]
+    required_columns:
+      PRTY_ID: {type: string, nullable: false}
+      AGRMNT_ID: {type: string, nullable: false}
+      PRTY_AGRMNT_ROLE_CD: {type: string, nullable: false}
+
+  AGREEMENT:
+    physical_table: agreement
+    domain: kernel
+    grain: one row per facility/account per effective-dated version
+    primary_key: [AGRMNT_ID, EFFECTIVE_START_DT]
+    required_columns:
+      AGRMNT_ID: {type: string, nullable: false}
+      EFFECTIVE_START_DT: {type: date, nullable: false}
+      EFFECTIVE_END_DT: {type: date, nullable: true}
+      AGRMNT_OPEN_DT: {type: date, nullable: false}
+      AGRMNT_CLOSE_DT: {type: date, nullable: true, format: "null = no scheduled close/maturity"}
+      AGRMNT_TYP_CD: {type: string, nullable: false, format: "DEP=deposit/current account, LON/ODR/TRF=credit facility, MTG=mortgage"}
+      AGRMNT_SBTYP_CD: {type: string, nullable: false}
+      AGRMNT_ORIG_LIM: {type: decimal, nullable: true, format: "credit limit; null for AGRMNT_TYP_CD=DEP"}
+      AGRMNT_PURP_CD: {type: string, nullable: false}
+    missing_data_policy: "An AGREEMENT referenced by PARTY_AGREEMENT but
+      absent from this table blocks that facility from detector input
+      (broken join), matching the existing accounts.yaml convention."
+
+  AGREEMENT_DAILY_BALANCE:
+    physical_table: agreement_daily_balance
+    domain: kernel
+    grain: one row per agreement per calendar day
+    primary_key: [AGRMNT_ID, AGRMNT_DLY_BAL_STRT_DTTM]
+    required_columns:
+      AGRMNT_ID: {type: string, nullable: false}
+      AGRMNT_DLY_BAL_STRT_DTTM: {type: date, nullable: false}
+      AGRMNT_LDGR_BAL_AMT: {type: decimal, nullable: false, format: "for DEP: cash balance; for credit facilities: amount drawn"}
+      AGRMNT_BAL_CURY_CD: {type: string, nullable: false}
+    time_semantics:
+      event_time_field: AGRMNT_DLY_BAL_STRT_DTTM
+      ingestion_time_field: null
+
+  MORTGAGE_AGREEMENT:
+    physical_table: mortgage_agreement
+    domain: lending
+    grain: one row per mortgage-type agreement (subtype extension of AGREEMENT)
+    primary_key: [AGRMNT_ID]
+    required_columns:
+      AGRMNT_ID: {type: string, nullable: false}
+      MORT_FXED_RT_END_DT: {type: date, nullable: true, format: "null = not on a fixed rate"}
+
+  EVENT_FINANCIAL:
+    physical_table: event_financial
+    domain: kernel
+    grain: one row per posted financial transaction
+    primary_key: [EVNT_ID]
+    required_columns:
+      EVNT_ID: {type: string, nullable: false}
+      AGRMNT_ID_TRN_ACCT: {type: string, nullable: false}
+      FIN_EVNT_PSTD_DT: {type: date, nullable: false}
+      FIN_EVNT_AMT: {type: decimal, nullable: false}
+      FIN_EVNT_CURY_CD: {type: string, nullable: false}
+      FIN_EVNT_SBTYP_CD: {type: string, nullable: false, allowed: [CRD, DBT]}
+      FIN_EVNT_TYP_ID: {type: string, nullable: false}
+    time_semantics:
+      event_time_field: FIN_EVNT_PSTD_DT
+      ingestion_time_field: null
+      note: "Same event-time-replay simplification as config/entities.yaml
+        (no true ingestion-timestamp exists in this synthetic dataset)."
+
+  COLLATERAL_ITEM:
+    physical_table: collateral_item
+    domain: lending
+    grain: one row per collateral item
+    primary_key: [CLTRL_ITEM_ID]
+    required_columns:
+      CLTRL_ITEM_ID: {type: string, nullable: false}
+      CLTRL_ITEM_TYP_CD: {type: string, nullable: false}
+    note: "Invented table -- see config header note."
+
+  AGREEMENT_COLLATERAL_ITEM:
+    physical_table: agreement_collateral_item
+    domain: lending
+    grain: one row per facility-to-collateral link
+    primary_key: [AGRMNT_ID, CLTRL_ITEM_ID]
+    required_columns:
+      AGRMNT_ID: {type: string, nullable: false}
+      CLTRL_ITEM_ID: {type: string, nullable: false}
+
+  COLLATERAL_ITEM_VALUE:
+    physical_table: collateral_item_value
+    domain: lending
+    grain: one row per collateral item per effective-dated valuation
+    primary_key: [CLTRL_ITEM_ID, EFFECTIVE_START_DT]
+    required_columns:
+      CLTRL_ITEM_ID: {type: string, nullable: false}
+      EFFECTIVE_START_DT: {type: date, nullable: false}
+      EFFECTIVE_END_DT: {type: date, nullable: true}
+      CLTRL_VAL_AMT: {type: decimal, nullable: false}
+      CLTRL_VALUTN_MTHD_CD: {type: string, nullable: false}
+    note: "This is the bi-temporal proof entity for this pass (Risk domain
+      and rating_downgrade are out of scope, so collateral_coverage_drop
+      takes over that role) -- see docs/decision_record.md's
+      'rating_downgrade is the detector that proves it' note, adapted."
+
+transformations: []

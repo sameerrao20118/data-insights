@@ -54,3 +54,107 @@ narrative:
 evaluation:
   match_window_days: 21   # allowable time window between a detection and a
                             # ground-truth event_date to count as a match
+
+# --- FDM-shaped detectors (docs/decision_record.md M3) ---------------------
+# rule_version below is shared by all FDM-path detectors, matching the
+# single top-level rule_version convention above, but namespaced separately
+# since these detect against config/entities_fdm.yaml, not entities.yaml.
+fdm_rule_version: "fdm.v1"
+
+cash_buildup:
+  window_days: 60
+  min_increase_pct: 0.15
+  min_prior_balance: 5000
+  # SLOT E2 opt-in: deterministic (default) | isolation_forest -- see detector docstring
+  baseline: deterministic
+  cooldown_days: 45
+
+dormancy:
+  dormancy_days: 60
+  cooldown_days: 45
+
+revenue_pattern_change:
+  window_days: 60
+  min_credits_per_window: 3
+  min_change_pct: 0.5
+  # SLOT E2 opt-in: deterministic (default) | isolation_forest -- see detector docstring
+  baseline: deterministic
+  cooldown_days: 45
+
+facility_utilization_spike:
+  utilization_threshold_pct: 0.85
+  cooldown_days: 30
+
+facility_maturity_approaching:
+  horizon_days: 90
+  cooldown_days: 30
+
+fixed_rate_expiry:
+  horizon_days: 90
+  cooldown_days: 30
+
+collateral_coverage_drop:
+  coverage_threshold_pct: 1.0
+  cooldown_days: 30
+
+# --- Risk domain (Domain 4) ------------------------------------------------
+rating_downgrade:
+  lookback_days: 180     # compare grade now vs. grade valid 180 days earlier
+  min_notches: 2         # on the 1 (best) .. 10 (worst) RSK_GRD_VAL scale
+  cooldown_days: 90
+
+pd_migration:
+  lookback_days: 180
+  min_relative_change: 0.5   # PD at least 50% higher than 180 days ago...
+  min_abs_change: 0.005      # ...AND at least 0.5 percentage points higher
+  # Improvements stay off until the correlation layer's category mapping is
+  # direction-aware -- otherwise a PD improvement would be treated as
+  # RISK_REVIEW and wrongly suppress revenue recommendations.
+  emit_improvements: false
+  cooldown_days: 90
+
+# --- RM-facing revenue framing -------------------------------------------
+# Indicative revenue-to-bank assumptions, so a relationship manager can see
+# WHY a recommendation is worth their time, in the units they actually
+# think in. Every one of these is an ILLUSTRATIVE PLANNING ASSUMPTION in
+# broadly industry-typical ranges -- NOT this bank's actual pricing, NOT
+# derived from real margin data, and NOT a commitment to any client. They
+# live here (not in code) so a product owner or treasurer can correct them
+# in review without a code change -- and every number derived from them is
+# labelled "illustrative" inline in the RM output itself.
+#
+# Revenue MECHANISM per category is documented in datainsights/worklist.py
+# (four categories earn revenue, two are defensive/relationship only) --
+# these percentages just put an indicative size on the four that do.
+fdm_revenue_model:
+  disclosure: "Illustrative planning assumptions, not this bank's pricing."
+  # annualised net interest margin on drawn/financed amount
+  financing_nim_pct: 0.022
+  # one-off arrangement/origination fee on a new facility
+  financing_arrangement_fee_pct: 0.010
+  # assumed drawn period for a working-capital style facility, in months,
+  # used to pro-rate the annualised NIM into an indicative first-cycle figure
+  financing_assumed_term_months: 9
+  # spread earned on deposit/short-term investment balances, annualised
+  treasury_spread_pct: 0.0075
+  # fee on FX/commodity hedge notional
+  hedging_fee_pct: 0.003
+  # categories that deliberately get NO revenue figure -- sizing a revenue
+  # number off a risk/compliance signal would be the wrong behaviour
+  no_revenue_categories: [RISK_REVIEW, ADVISORY_ONLY]
+
+# Offer sizing for ENDOGENOUS-only signals (no confirming external event).
+# Each rule sizes from the client's OWN facility/balance data using a
+# standard commercial-banking convention -- never from a guess about the
+# client's revenue. Illustrative planning assumptions, labelled as such in
+# every sized action. Signals with no honest basis for a number (e.g. a
+# revenue pattern change without a contract value) stay unsized.
+fdm_endogenous_sizing:
+  # facility_utilization_spike: size a limit increase that brings drawn
+  # utilisation back to this target (a common headroom convention)
+  target_utilization_pct: 0.70
+  # below this, a sized offer isn't worth an RM conversation -- the row
+  # stays unsized rather than pitching a trivial amount
+  min_offer_eur: 10000
+  # cash_buildup: offer = the balance build-up over the review window
+  # facility_maturity_approaching: offer = renewal at the current limit

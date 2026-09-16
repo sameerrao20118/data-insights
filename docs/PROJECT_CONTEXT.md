@@ -1,109 +1,125 @@
 # DataInsights — condensed project context (for handoff to another Claude session)
 
 **Purpose of this file**: a single, self-contained document capturing the
-full context of this project — objective, architecture, decisions, current
-state, and working conventions — so it can be pasted into a Claude session
-in a different, more restricted environment (e.g. a corporate machine that
-blocks/filters script uploads) and that session can understand the project
-without seeing the actual codebase. Paste this whole file as the first
-message, or as a system/context message, before asking for help.
+full context of this project — objective, architecture, decisions,
+current state, and working conventions — so it can be pasted into a
+Claude session in a different, more restricted environment (e.g. a
+corporate machine that blocks/filters script uploads) and that session
+can understand the project without seeing the actual codebase. Paste
+this whole file as the first message, or as a system/context message,
+before asking for help.
 
-Last synced against the real repo: 2026-09-12.
+Last synced against the real repo: 2026-09-16.
 
 ---
 
 ## 1. What this is, in one paragraph
 
-A proof-of-concept for a commercial/institutional banking **Next-Best-Action
-(NBA) / Event-Based-Marketing (EBM)** system. Relationship managers today
-reach out to clients on a calendar (quarterly check-ins), not on a signal.
-This system watches two kinds of signal a calendar can't: a client's **own**
-transaction behavior (endogenous events — e.g. an unusually large incoming
-payment), and **external** market/political/industry events near them
-(exogenous events — e.g. a sanctions change, a public tender award, an
-energy price shock). It detects these, ranks them transparently, sizes a
-concrete recommended action per client, and hands it to an RM as a
-human-reviewed worklist — never automating outreach itself.
+A proof-of-concept for a commercial/institutional banking **Next-Best-
+Action (NBA)** system, built against NatWest's Federated Data Model
+(`docs/fdm_reference.md`) and a captured engineering Decision Record
+(`docs/decision_record.md`). Relationship managers today reach out to
+clients on a calendar, not on a signal. This system watches a client's
+**own** activity (endogenous: deposit buildup, facility utilization,
+revenue-pattern shifts, credit-risk grade changes) and **external**
+events near them (exogenous: a public tender award, matched against
+that client's own confirming activity, not just sector/country
+broadcast), assembles whatever fired for a client into one ranked,
+sized, hypothesis-backed recommendation, and hands it to an RM as a
+human-reviewed worklist — it enriches signals feeding Pega CDH, it does
+not arbitrate or deliver to a channel itself (D1). A small set of local-
+Ollama agents extract and narrate; none of them decide a category, a
+score, or an offer size — that logic is deterministic Python throughout,
+tested and traceable.
 
-Scope: commercial/institutional clients only (SME / Mid-Corporate /
-Large-Corporate / Institutional segments — never retail, never private
-banking), European market (EU/EEA, EUR-default, multi-currency-aware).
+Scope: commercial/institutional clients only (SME / Mid-Corp / Large-
+Corp / Institutional segments), European market, EUR-default.
 
 ## 2. Non-negotiable constraints (apply everywhere in this project)
 
 - **Local inference only, no paid/cloud LLM calls, ever.** Enforced in
-  code (hard-coded validators reject Ollama `-cloud` tags, non-localhost
-  endpoints, and any "paid calls allowed" flag) — not just documented policy.
+  code (`datainsights/config.py`'s validators reject Ollama `-cloud`
+  tags, non-localhost endpoints, and any "paid calls allowed" flag) —
+  every agent (`agents/model_factory.get_model()`) routes through this
+  same validator.
 - **Human review before any action.** Nothing in this system emails a
   client, writes to a CRM, or takes an action. It produces a reviewable
-  recommendation; a person decides.
-- **No autonomous multi-step agent.** An LLM may extract structure from
-  unstructured evidence, and may write a narrative from already-verified
-  facts. It never chains multi-hop causal reasoning on its own ("war →
-  prices → client's margin → act") and never decides what to search for next.
+  recommendation; a person decides — and an RM's decision (Customer
+  Engaged / Not Appropriate / Remind Me Later) is now actually captured
+  (`datainsights/rm_feedback.py`), not just planned for.
+- **No autonomous multi-step agent.** Every LLM call in this build is
+  either narration-of-already-computed-facts (no tool access) or a
+  single read-only investigation scoped to one client — never a chain of
+  reasoning across domains, never a model that decides what to look at
+  next.
 - **Ground truth stays isolated from the detector.** Any synthetic label
-  used to verify a detector lives in a physically separate, code-blocked
-  directory (`protected_evaluator_only/`) that the detection code cannot
-  import a path to. Enforced at three independent layers: directory
-  boundary, schema/contract boundary, and code-level path refusal.
+  lives in a physically separate, code-blocked directory
+  (`protected_evaluator_only/`) the detection code cannot import a path
+  to. Enforced at three independent layers. No agent introduced this
+  build (extraction, investigator, copilot) has an import path to it
+  either.
 - **Deterministic first, ML only when justified, LLM only where it earns
-  its keep.** Statistics/rules before ML; an explicit, auditable ranking
-  formula before a trained ranker; an LLM only at extraction
-  (unstructured → structured) and narrative (structured → readable)
-  layers — always validated against the evidence, always able to fall
-  back to a deterministic template or abstain, never the decision-maker.
+  its keep.** Rules before ML (an opt-in outlier-robust baseline exists,
+  measured against the deterministic default, not defaulted-to); an LLM
+  only at extraction (unstructured text → structured event), narration
+  (facts → readable text), investigation (evidence → a proposed,
+  unconfirmed refinement), and RM Q&A (one row → an answer) — always
+  validated against the evidence, always able to fall back to a
+  deterministic template, never the decision-maker.
 - **No production deployment, no real external communication.** No AWS
-  resource provisioning, no converting a Snowflake trial to paid, no
-  emails/CRM writes — this is a proof-of-concept, explicitly.
+  resource provisioning, no real MIMO/Pega/S3 publish, no emails/CRM
+  writes — every sink that shapes toward one of those targets is
+  schema-only and explicitly NOT RUN.
 
-## 3. Architecture — two parallel pipelines, one unified output
+## 3. Architecture — one pipeline, a domain registry, and four narrow agents
 
 ```
-ENDOGENOUS PIPELINE (a client's own transactions)
-  OfflineLocalSource (DuckDB/CSV)  [Snowflake adapter wired, NOT RUN]
-    -> large_incoming_payment detector (rolling MAD vs. 90-day trailing baseline)
-    -> ranking.rank() (magnitude + recency, explicit formula, clipped [0,1])
-    -> local Ollama narrator (validated) -> deterministic template (fallback)
-    -> SQLite state -> markdown digest
+FdmLocalSource (DuckDB/CSV, bi-temporal as-at)  [Snowflake adapter wired, NOT RUN]
+  -> config/domains_fdm.yaml + datainsights/domain_registry.py   (domain registry, data half)
+  -> agents/tools.py + agents/domain_registry.py                  (domain registry, code half --
+                                                                    one register() call per domain)
+  -> detection_engine/*.py   (7 FDM detectors + rating_downgrade, same Config/detect() shape)
+  -> agents/domain_agent.py  (narrates verified facts -- NO tool access, validate-or-fallback)
+  -> datainsights/correlation/  (Signal Bus -> Hypothesis Assembler -> De-dup)
+  -> ONE Recommendation per client
+  -> datainsights/sinks/  (RM worklist CSV + digest, MIMO JSON, Pega event mock --
+                            none computes its own category/hypothesis/sizing)
 
-EXOGENOUS PIPELINE (external events, parallel, same shape)
-  SimulatedExternalEventSource (CSV; real APIs: ECB, TED, Eurostat,
-    EU sanctions/OpenSanctions, EUR-Lex, GDELT, EM-DAT)
-    -> external_macro_event detector (sector/country match + cooldown)
-    -> ranking.rank_macro() (severity + recency, same shared formula shape)
-    -> macro narrator (hedged-language validator) -> macro template (fallback)
-    -> SQLite state -> markdown digest
-
-BOTH -> datainsights/worklist.py -> ONE unified, row-per-client CSV worklist
-  (category tag + hypothesis + sized recommended action + evidence)
+Alongside, three narrow agents (docs/agentic_plan.md):
+  external_events/event_extraction_agent.py   (A1: text -> validated ExogenousEvent, feeds the
+                                                deterministic exposure_qualifier -- never decides exposure)
+  agents/investigator_agent.py                (A2: for an `ambiguous`-flagged Recommendation, proposes
+                                                a category refinement from a fixed set -- RM confirms)
+  agents/rm_copilot_agent.py                  (A3: answers an RM's question from ONE worklist row,
+                                                no tool, no DataSource access; captures RM feedback)
 ```
 
-Key design point: swapping the source backend (local CSV → Snowflake) only
-changes one adapter behind a shared `DataSource` interface — detection,
-ranking, narrative, and worklist code never change. Verified true today
-because the Snowflake adapter is written but never executed (no credentials
-in this environment) — the interface contract is what guarantees it, not
-a live test.
+Key design point: adding a domain (proven with Risk's `rating_downgrade`)
+needs one YAML block + one `register()` call — zero edits to
+`agents/orchestrator.py`, `agents/domain_agent.py`, or
+`datainsights/correlation/hypothesis.py`. Swapping the source backend
+(local CSV → Snowflake) changes one adapter behind the shared
+`DataSource` interface; `tests/test_fdm_source_conformance.py` proves
+the two can't silently drift. Both guarantees are structural
+(proven by a test that adds a throwaway domain/checks conformance), not
+just claimed.
 
 ## 4. Where each kind of "intelligence" sits (and why)
 
 | Stage | Technique | Why |
 |---|---|---|
-| Detection — transaction | **Statistical** | Rolling median absolute deviation vs. trailing baseline. Explainable, no training data needed. |
-| Detection — external event | **Rule-based** | Sector/country match — a join, not a model. Nothing to overfit. |
-| Ranking (both pipelines) | **Statistical** | Explicit magnitude+recency formula, every component visible in the output. No opaque score. |
-| Narrative (evidence → text) | **LLM (local Ollama)** | Validated against the evidence packet before acceptance; deterministic template fallback on any validation failure. Never invents a fact not in the evidence. |
-| Quality check | **LLM (local Ollama)** | Sampled judge, deliberately a *different* model than the narrator, to reduce (not eliminate) correlated errors. |
-| Category tagging | **Rule-based** | Static/direction-conditional lookup table (e.g. a rate cut → financing; a rate rise → treasury). Not a model. |
+| Endogenous detection | **Statistical / rule-based** | Rolling baselines, threshold rules — explainable, no training data needed. One opt-in outlier-robust ML baseline exists (SLOT E2), measured against the deterministic default, not defaulting to it. |
+| Exogenous event extraction (A1) | **LLM (local Ollama), validated** | Unstructured text has no rule to parse it with — this is the one place an LLM does work a rule genuinely cannot. Every field is validated in code before it becomes a real event; anything that fails goes to a review queue, never silently through. |
+| Exogenous exposure qualification | **Rule-based, deterministic** | Sector + geography + a genuine confirming signal from the client's own data — a join and a threshold, not a model. The LLM in A1 never decides exposure. |
+| Cross-domain correlation | **Deterministic Python** | The decision record's four composition rules, explicit and auditable — never an LLM. |
+| Narrative (facts → text) | **LLM (local Ollama), no tool access** | Validated against the evidence before acceptance; template fallback on any failure. Never invents a fact, never calls a tool (M8/A0 — an earlier version gave it tools it didn't need, which just re-ran detection for no benefit). |
+| Ambiguous-signal investigation (A2) | **LLM (local Ollama), read-only tools, one client** | For a signal whose category mapping is a disclosed simplification (e.g. `fixed_rate_expiry`). Proposes only; never changes the category itself. |
+| RM Q&A (A3) | **LLM (local Ollama), zero tools** | Answers only from one worklist row's own fields — structurally unable to reach another client's data. |
+| Category tagging | **Rule-based lookup** | `config/domains_fdm.yaml`'s per-signal-type category map, read by the domain registry — not a model. |
 | Offer sizing (the amount) | **Rule-based, disclosed heuristic** | See §6 below. |
-| Machine learning | **Not built** | Deliberately deferred — no real RM accept/reject outcome data exists yet to train against. Every "not yet ML" decision is intentional, not a gap someone forgot. |
+| Propensity / arbitration (SLOT E4) | **Not built, correctly** | Blocked on RM-response label access (D6) — Pega owns arbitration. `datainsights/rm_feedback.py` now captures that label going forward; the model itself stays unbuilt until real access exists. |
 
 ## 5. The six recommendation categories, and which ones are actual bank revenue
-
-Every detection (either pipeline) gets tagged with exactly one of six
-categories. Four are real revenue mechanisms; two are defensive/relationship
-only — this distinction matters and is stated explicitly in the code's own
-docstrings, not just in conversation:
 
 | Category | Bank revenue mechanism? | Mechanism |
 |---|---|---|
@@ -111,302 +127,264 @@ docstrings, not just in conversation:
 | `TREASURY_OPPORTUNITY` | **Yes** | Fee/spread income from a deposit or short-term investment product |
 | `HEDGING_NEED` | **Yes** | Fee income from an FX/commodity hedge |
 | `CAPEX_FINANCING` | **Yes** | Interest income on equipment/transition financing |
-| `RISK_REVIEW` | No — defensive | Compliance/counterparty exposure review (sanctions, geopolitical) — protects existing revenue, isn't a sales trigger |
+| `RISK_REVIEW` | No — defensive | Credit/collateral/rating exposure review — protects existing revenue, isn't a sales trigger. Suppresses any revenue category for the same client (rule 1). |
 | `ADVISORY_ONLY` | No — relationship | A conversation worth having, no clear product yet |
 
-## 6. The hypothesis → sized action pattern (the most recently built, and most business-facing, part of this system)
+## 6. The hypothesis → sized action pattern
 
-The business-facing ask that drove the most recent build phase: **for
-every matched client, state the general hypothesis for why this event
-implies a need, then give a specific, sized, per-client action** — not a
-generic "RM to review."
+For every client with a recommendation: state the **general** hypothesis
+for why the signal implies a need, then give a **specific, sized,
+per-client action**.
 
-Two layers, deliberately kept separate:
-
-1. **`hypothesis`** — one sentence of *general* reasoning, e.g.: *"Winning
-   a public tender creates a cash-flow gap between delivery and payment —
-   the winner needs working capital sized to the contract, not their
-   balance sheet, and needs it before delivery starts."* Same sentence for
-   every client matched to that event type + direction. Lives in a
-   lookup table keyed by `(event_type, direction)`, mirroring the category
-   lookup table.
-2. **Sized `recommended_action`** — a concrete number *per client*, e.g.:
-   *"Offer working-capital financing of ~€1,973,422 (25% of the
-   €7,893,686 tender value, illustrative) to bridge delivery before
+1. **`hypothesis`** — one sentence of general reasoning, keyed by
+   signal_type in `config/domains_fdm.yaml` (e.g.:
+   *"Winning a public tender creates a cash-flow gap between delivery
+   and payment... working capital sized to the contract is timely before
+   delivery starts."*). Same sentence for every client matched to that
+   signal_type; `datainsights/correlation/hypothesis.py` overrides it
+   with a more specific line when exogenous confirmation applies.
+2. **Sized `recommended_action`** — a concrete number per client, e.g.:
+   *"Offer working-capital financing of ~EUR 800,000 (25% of the EUR
+   3,200,000 tender value, illustrative) to bridge delivery before
    payment."*
 
 How the number is grounded, honestly:
-- Two simulated event types (`public_tender_award`, `natural_disaster`)
-  were given a simulated monetary magnitude (`estimated_value_eur`),
-  because their **real** sources (TED, EM-DAT) actually publish exactly
-  that — a contract award value, an estimated damage figure. This was
-  added specifically so a concrete number could be stated *honestly*
-  (as simulated data) rather than invented in a conversation.
-- The offer size is then a disclosed **percentage of that event value**
-  (e.g. 25% of tender value as a working-capital advance), capped at a
-  multiple of the client's own annual revenue so a large regional event
-  doesn't produce an implausible ask against a small client.
-- For event types with no natural per-event value (a rate move, an energy
-  price index shift, a new regulation), the offer is sized as a disclosed
-  **percentage of the client's own revenue** instead (e.g. 15% of revenue
-  for a rate-cut-driven financing review).
-- For the transaction pipeline, no heuristic is needed at all — the
-  amount is the *actual* flagged transaction value.
-- **Every percentage is stated inline as "illustrative"** in the output
-  string itself — e.g. "(25% of the €X tender value, illustrative)" — so
-  nobody downstream mistakes a planning heuristic for a validated
-  conversion benchmark. This is a hard rule this project holds itself to:
-  never assert more certainty than the evidence supports.
-- Two categories (`RISK_REVIEW` — sanctions, geopolitical disruption)
-  deliberately get **no** sized number. Sizing a financing offer off a
-  compliance/risk signal would be the wrong move, so the code doesn't do it.
+- An exogenous event with a real `estimated_value_eur` (from the TED-
+  shaped fixture, or now from A1's own extraction) sizes a
+  disclosed-percentage working-capital offer.
+- Endogenous-only signals size from the client's OWN figures
+  (`EndogenousSizing` in `hypothesis.py`) — e.g. `cash_buildup` offers
+  the actual balance build-up amount; `facility_utilization_spike`
+  offers a limit increase to a target utilization. Never a guess about
+  revenue not on file.
+- **Every heuristic figure is labeled "illustrative" inline**, and
+  `sizing_basis` states the exact method as a machine-readable string
+  (e.g. `25pct_of_event_value_illustrative`) — never a raw number with
+  no disclosed method.
+- `RISK_REVIEW` and `ADVISORY_ONLY` deliberately get **no** sized
+  number — `datainsights/fdm_worklist.py`'s revenue model excludes them
+  by name.
 
-This hypothesis + sizing logic is written into the actual pipeline output
-(the worklist CSV and every RM digest), not produced ad hoc — every one of
-~3,000 rows in a real run carries both fields automatically.
+This is produced automatically for every `Recommendation`
+(`datainsights/correlation/hypothesis.py::assemble()`), not ad hoc, and
+lands in every sink: the worklist CSV, the RM digest, and (schema-only)
+the MIMO/Pega records.
 
-## 7. Inputs and outputs — what feeds in, what comes out
+## 7. Inputs and outputs
 
-### 7.1 Endogenous inputs, organized by banking domain
+### 7.1 Endogenous domains — what's built vs. deferred
 
-In a real deployment, endogenous input is **not one table per domain** —
-each domain is realistically fed by a data lake / warehouse pulling from
-several core systems, each contributing multiple tables at different
-grains (transaction-level, position/snapshot-level, reference/master data,
-event/case-log data). This project's synthetic dataset simplifies that
-down to one flat CSV per concept, as a proof-of-concept scope choice, not
-a claim that a real integration would look this simple. The breakdown
-below lists the kind of tables a real data lake would actually hold per
-domain, then what this build's simplified files stand in for.
-
-**1. Deposits** — core banking / current account ledger
-- Realistic underlying tables: account master, current/savings transaction
-  log, end-of-day balance snapshot, term-deposit book & maturity schedule,
-  account opening/closure event log, deposit concentration/aggregation view
-- This build's stand-in: `accounts.csv`, `balances.csv`, `transactions.csv`
-  — **detector built**: `large_incoming_payment` reads these
-- Real trigger types not yet built: treasury cash buildup, dormancy,
-  recurring-revenue pattern change
-
-**2. Lending** — loan origination / credit facility system
-- Realistic underlying tables: facility master, drawdown/repayment
-  schedule, utilization snapshot (daily/monthly), covenant monitoring log,
-  collateral/security register, maturity/renewal calendar
-- This build's stand-in: `facilities.csv` (loans, credit lines, trade
-  finance, guarantees) — **data exists, no detector reads it yet**
-- Real trigger types not yet built: credit utilization spike, facility
-  maturity approaching, covenant breach risk
-
-**3. Balance sheet management (treasury/ALM)** — treasury/ALM system,
-group consolidation
-- Realistic underlying tables: FX position table by currency, liquidity
-  ratio feed, intercompany flow log, group consolidation/ownership
-  hierarchy, cash-pooling/sweep records, duration/gap analysis output
-- This build's stand-in: `entity_groups.csv` (group hierarchy),
-  multi-currency fields on `accounts.csv`/`transactions.csv` — **data
-  exists, no detector reads it yet**
-- Real trigger types not yet built: FX exposure emerging, group-level
-  treasury optimization opportunity
-
-**4. Risk** — internal credit risk rating system, covenant monitoring
-- Realistic underlying tables: risk-rating history (per client, per
-  period), rating-migration log, sector/country concentration exposure
-  view, counterparty concentration view, stress-test/scenario output
-- This build's stand-in: `risk_ratings.csv` (annual rating per client) —
-  **data exists, no detector reads it yet**
-- Real trigger types not yet built: rating downgrade, counterparty
-  concentration risk
-
-**5. Economic crime (fraud & financial crime)** — AML transaction
-monitoring, sanctions/PEP screening, KYC system
-- Realistic underlying tables: AML alert/case log, sanctions & PEP
-  screening log (with re-screening cadence), transaction-monitoring
-  typology flags (structuring, rapid movement, round-tripping), KYC
-  refresh/due-diligence log, adverse-media/negative-news feed
-- This build's stand-in: `pep_flag`, `sanctions_screening_status`,
-  `last_screening_date` on `clients.csv`; `high_risk_counterparty_flag`,
-  `counterparty_country` on `transactions.csv` — **data exists,
-  deliberately no detector**, see note below
-
-**Why domain 5 has no detector, on purpose, not by oversight**: this
-project is an NBA/EBM (sales-facing) system. Financial-crime detection is
-a different accountable function (FinCrime/AML) in a real bank, with its
-own governance, escalation path, and regulatory obligations — bolting an
-AML trigger onto a sales worklist would blur that accountability even
-though the raw fields happen to sit in the same tables. This project also
-already documented a hard boundary (§2, and `docs/compliance_and_industry_context.md`)
-against ever correlating a `pep_flag` with a political/geopolitical
-exogenous event type, precisely because that specific combination is
-where a currently-defensible design would stop being one. If a real
-FinCrime detector is ever built from this same data, it should be a
-separate system with its own review path, not an extension of this one.
-
-### 7.2 Exogenous inputs — real source catalog
-
-Each simulated exogenous event type is tagged with the real, free,
-public API that would replace it in production, and how that source's
-data actually arrives (structured/real-time vs. lagged vs. needing
-extraction first):
-
-| Event type | Real source | Data shape |
+| Domain | Status | Detectors |
 |---|---|---|
-| Rate policy change | ECB SDMX API | Structured, real-time policy-rate series |
-| Public tender award | TED (Tenders Electronic Daily) API | Structured award notices, incl. contract value |
-| Commodity/energy shock | Eurostat / ECB energy statistics | Structured index series, weekly-to-monthly lag |
-| Sanctions/regulatory change | EU sanctions list / OpenSanctions | Structured, authoritative, updates on change |
-| EU regulatory change | EUR-Lex | Structured legal-act metadata; sector impact needs interpretation |
-| Geopolitical disruption | GDELT Project | Unstructured — needs LLM extraction first, noisier |
-| Natural disaster | EM-DAT International Disaster Database | Structured, incl. estimated damage; reporting lag of days-to-weeks |
+| Deposits | **Built** | `cash_buildup`, `dormancy`, `revenue_pattern_change` |
+| Lending | **Built** | `facility_utilization_spike`, `facility_maturity_approaching`, `fixed_rate_expiry`, `collateral_coverage_drop` |
+| Risk | **Partially built** | `rating_downgrade` wired (reads `PARTY`'s real bi-temporal risk-grade history); `pd_migration` built and tested but **unwired** — needs `PARTY_METRIC`, which doesn't exist in the dataset or contract |
+| Treasury | **Not started, blocked** | No confirmed C&I client-facing treasury data source exists at all (decision record's own Phase 6 finding) |
 
-### 7.3 Output — the outcome format this project standardized on
+Every entity is bi-temporal (`EFFECTIVE_START_DT`/`EFFECTIVE_END_DT`)
+where the FDM captures it that way — `config/entities_fdm.yaml` tags
+each table's provenance honestly (real captured DDL, real DDL with
+invented values, or fully invented, never silently blended).
 
-The canonical output of this system, from either pipeline, is **not** a
-raw score or a flat alert — it's a three-layer "outcome" per client, and
-this shape is the actual thing worth carrying forward into any future
-version of this system:
+### 7.2 Exogenous inputs
 
-1. **Category** — which of the six recommendation types this is
-   (`FINANCING_NEED`, `TREASURY_OPPORTUNITY`, `HEDGING_NEED`,
-   `CAPEX_FINANCING`, `RISK_REVIEW`, `ADVISORY_ONLY` — see §5).
-2. **Hypothesis** — one sentence of *general* reasoning for why this
-   event/direction implies this kind of need (the same sentence for every
-   client matched to that event type — see §6). This is the part an RM
-   can restate before getting to any number.
-3. **Sized, client-specific action** — a concrete recommended action with
-   a number attached wherever one can be honestly grounded (a real
-   transaction amount, a simulated event value, or a disclosed
-   percentage of the client's own revenue), always labeled "illustrative"
-   when it's a heuristic rather than a hard fact.
+`external_events/exposure_qualifier.py`'s `ExogenousEvent` is fed two
+ways today:
+1. **The generator's fixture** (`external_events/output_fdm/tender_events.csv`)
+   — a hand-shaped `public_tender_award` matched to a real
+   exposed/unexposed client pair in the generated data.
+2. **A1's extraction agent** (`external_events/event_extraction_agent.py`)
+   — turns notice text into the same `ExogenousEvent` shape, validated
+   (NACE section in the real set this dataset uses, ISO country code,
+   date not after ingest, currency-grounded value, banned-term check).
+   `agents/demo_fdm_scenario.py` prefers this source when it exists.
+   Measured, live: TP=5, FP=0, FN=1 on 10 hand-written notices — zero
+   false positives across every run, including while recall was 0%
+   before a prompt fix.
 
-Worked example, exactly as it appears in a real digest/worklist row today:
+Only `public_tender_award` has an exposure-qualification rule
+implemented; the decision record names six other real, free sources
+(ECB SDMX, Eurostat, EU sanctions/OpenSanctions, EUR-Lex, GDELT, EM-DAT)
+as future extension points, each requiring its own qualification rule
+before it can act — extraction alone doesn't make a new event type
+usable.
 
-> **Category:** `FINANCING_NEED`
-> **Hypothesis:** "Winning a public tender creates a cash-flow gap between
-> delivery and payment — the winner needs working capital sized to the
-> contract, not their balance sheet, and needs it before delivery starts."
-> **Action:** "Offer working-capital financing of ~€1,973,422 (25% of the
-> €7,893,686 tender value, illustrative) to bridge delivery before payment."
+### 7.3 Output — the outcome format, per sink
 
-This three-layer shape is produced for **every** matched client
-automatically (not just the handful that get a full LLM narrative each
-run) and is written into both real outputs:
+Every `Recommendation` carries category + hypothesis + sized action +
+evidence + a stable `recommendation_id` (for future feedback-label
+joins) + `baseline_source` (which SLOT E2 baseline produced it) +
+`ambiguous` (whether A2 should look at it). Rendered, identically, by:
 
-- **The unified worklist CSV** — one row per (client, active
-  recommendation): `rank`, `score`, `category`, `hypothesis`,
-  `recommended_action`, `evidence_summary`, plus client profile fields.
-- **The RM-facing markdown digest** — the same three layers rendered as
-  readable prose per client, with observed facts and caveats around them.
-- **The local Streamlit dashboard** — a filterable, clickable view over
-  the same worklist rows, for demoing rather than for the RM's daily use.
+- **The RM worklist CSV** (`datainsights/fdm_worklist.py`) — one row per
+  recommendation, ranked by indicative revenue.
+- **The RM markdown digest** — the same fields as readable prose.
+- **The Streamlit dashboard** (`dashboard/app.py`'s "FDM worklist" page)
+  — filterable table, plus (M8/A3) an "ask about this recommendation"
+  copilot panel and RM-response capture, live, not a mockup.
+- **A MIMO-shaped JSON** and a **Pega event mock** — schema-only, NOT
+  wired to a real platform; `tests/test_sink_contract.py` proves all
+  sinks agree on category/hypothesis/action/id from one Recommendation.
 
 **What is explicitly not an output**: no email, no CRM write, no
-automated outreach of any kind. The outcome is a reviewable
-recommendation; a person decides what happens next.
+automated outreach, no real MIMO/Pega/S3 publish.
 
-## 8. Current state — what's actually verified vs. not
+## 8. Current state — see `docs/current_state.md`
 
-**Built, running, verified end-to-end, zero paid/cloud calls:**
-- Synthetic dataset generator (300 commercial/institutional clients,
-  ~300K transactions, realistic IBAN/LEI/NACE/ISO-20022 schema) + an
-  independently-seeded holdout dataset
-- Typed, validated runtime config (Pydantic; hard-blocks unsafe settings
-  in code, not just YAML)
-- Endogenous detector (`large_incoming_payment`) — point-in-time correct,
-  idempotent, cooldown-suppressing
-- Exogenous detector (`external_macro_event`) — sector/country match,
-  cooldown-suppressing
-- Shared ranking formula (magnitude + recency, two thin wrappers for the
-  two detector families)
-- Two narrator families (transaction-shaped, macro-event-shaped), each
-  with a validate-or-fallback-to-template pattern
-- Offline-sampled judge (different model than narrator)
-- SQLite state store, idempotent, narrative caching by evidence hash
-- Unified worklist generation (category + hypothesis + sized action +
-  evidence, one CSV, both pipelines)
-- A local Streamlit dashboard (`dashboard/app.py`) — data source previews,
-  pipeline run buttons, filterable worklist, digests, technique reference,
-  status — everything read-only against real files except the run buttons,
-  which shell out to the exact same modules the CLI uses
-- 16/16 automated tests passing (both detector families)
-- A dev-diagnostic evaluation harness against embedded ground truth
-  (**explicitly disclosed as contaminated** — the same session that wrote
-  the label-injection logic also wrote and evaluated the detector; numbers
-  from it are a development diagnostic, not a clean benchmark)
+That file is kept current with every session's verified/NOT RUN status
+and is the fresher summary — this section intentionally doesn't
+duplicate it (duplication is how docs drift). Headline, as of the last
+sync above: **296 tests passing** (∼290 without a reachable local
+Ollama), both demo scripts and the Streamlit dashboard verified working,
+including live end-to-end Ollama runs and real Streamlit `AppTest`
+clicks (not just page loads) for the A3 copilot/feedback panel.
 
-**Explicitly NOT built / NOT run:**
-- Snowflake: adapter code exists (same `DataSource` interface), has
-  **never executed** — no credentials in this environment
-- Replay/monitor mode with a virtual clock and incremental checkpoints
-- The other 7 endogenous trigger types labeled in the data but undetected
-  (only 1 of 8 has a real detector)
-- ML ranking challenger — deferred on principle (§4), not a gap
-- A review/tracking dashboard with reviewed/actioned/dismissed state
-  (the Streamlit dashboard is a *demo viewer*, explicitly not this)
-- Real (non-simulated) external event sources — the interface is built
-  for this, nothing plugs into a live API yet
-- AWS/Bedrock/AgentCore integration — contract-and-mock only, by policy
+Two disclosed, unfixed issues worth carrying into any continuation:
+1. **A2's investigator agent** produced a category proposal that
+   contradicted its own stated evidence on a live run — current
+   validation checks the category is in the allowed set, not that the
+   reasoning supports it. Treat its proposals as unconfirmed.
+2. **`pd_migration`** (Risk) is built and tested but unwired, correctly
+   — blocked on data that doesn't exist, not forgotten.
 
 ## 9. Known limitations to state honestly if this work continues
 
-- **Contamination**: any precision/recall/judge number from this
-  session's own dataset is a development diagnostic, not a validated
-  detection-quality claim, because the same session wrote the injection
-  logic that creates the labels being measured against.
+- **Contamination**: any precision/recall number from a session that
+  also wrote the injection/generation logic is a development
+  diagnostic, not a validated detection-quality claim.
 - **Illustrative heuristics, not benchmarks**: every sizing percentage
-  (25% of tender value, 15% of revenue, etc.) is a planning assumption
-  this build chose, disclosed inline, not derived from real conversion data.
-- **Category tags are best-guesses**: the six-category mapping (e.g. "a
-  rate cut → financing conversation") is an honest inference from the
-  event's shape, not a validated product recommendation.
-- **Correlated judge/narrator risk**: both are local Ollama models with
-  unknown training-data overlap — a different model reduces but doesn't
-  eliminate correlated errors.
-- **GDPR/EU AI Act**: checked (not assumed) — this design sits outside
-  both because sector/country matching operates on legal entities, never
-  correlates with a politically-exposed-person flag, and produces no
-  individual-level creditworthiness score. That boundary (never combine
-  a PEP flag with a political/geopolitical event type) is a real
-  constraint to keep, not a solved problem to revisit casually.
+  is a disclosed planning assumption, not derived from real conversion
+  data.
+- **SLOT E2 disagreement isn't evidence of improvement**: the ML
+  baseline and the deterministic one disagree on real data at scale, but
+  there's no real outcome label on synthetic data to say which is
+  right — keep this in mind before treating a "detected" from either
+  baseline as ground truth.
+- **A2's reasoning-consistency gap** (§8) — a proposal can currently be
+  self-contradictory and still pass validation.
+- **Correlated judge/narrator risk**: local Ollama models with unknown
+  training-data overlap where more than one model is used in the same
+  pipeline.
+- **GDPR/EU AI Act**: checked, not assumed — this design sits outside
+  both because matching operates on legal entities, never correlates a
+  PEP/high-risk flag with a political event type, and produces no
+  individual-level creditworthiness score. `HIGH_RSK_CUST_IND` is
+  proven (by test) to only ever suppress a category, never scale a
+  score or appear in narrative/agent text.
 
 ## 10. Repo structure (key files only)
 
 ```
-data_generator/generate_data.py         synthetic dataset generator
-data_generator/output/                  the dataset itself; protected_evaluator_only/ is ground truth, code-blocked
-detection_engine/large_incoming_payment.py   endogenous detector
-detection_engine/external_macro_event.py     exogenous detector
-datainsights/ranking.py                 shared ranking formula (rank() + rank_macro())
-datainsights/narrative/                 both narrator families + evidence packets
-datainsights/worklist.py                category tags, hypothesis lookup, offer sizing, unified CSV builder
-datainsights/state.py                   SQLite state/idempotency/narrative cache
-datainsights/runner.py, cli.py          endogenous pipeline orchestration
-external_events/                        exogenous event simulator + demo runner + README (real-source mapping)
-dashboard/app.py                        Streamlit demo dashboard
-docs/objective.md                       the reference doc — check any new decision against this first
-docs/architecture.md                    full system design + diagram
-docs/current_state.md                   verified vs. NOT RUN vs. not built (may lag; this file is the fresher summary)
-docs/gap_analysis.md                     current state vs. objective, table form
-docs/compliance_and_industry_context.md GDPR/EU AI Act boundary checks, dated
-docs/artifacts/                         exported presentation HTML (pipeline diagrams, sponsor pitch, demo run sheet)
-run_demo.sh                             one command: tests -> both pipelines -> evaluation -> worklist
+config/entities_fdm.yaml                FDM source contract (bi-temporal, per-entity provenance)
+config/domains_fdm.yaml                 domain registry -- data half (actions, category/hypothesis, ambiguity)
+config/rules.yaml                       detector thresholds + SLOT E2 baseline selection
+data_generator/fdm/generate_fdm.py      synthetic FDM dataset (--n-parties/--history-years for scale)
+data_generator/output_fdm*/             the dataset; protected_evaluator_only/ is ground truth, code-blocked
+datainsights/sources/fdm_local.py       FdmLocalSource -- DuckDB, bi-temporal as-at joins
+datainsights/domain_registry.py         domain registry data-half accessors
+detection_engine/*.py                   7 FDM detectors + rating_downgrade (pd_migration built, unwired)
+agents/tools.py                         Strands @tool per detector, one register() call per domain
+agents/domain_registry.py               domain registry code-half (tool factories, detector modules)
+agents/domain_agent.py                  narrates verified facts, no tool access, validate-or-fallback
+agents/investigator_agent.py            A2 -- proposes a refinement for an ambiguous signal
+agents/rm_copilot_agent.py              A3 -- answers from one worklist row, zero tools
+agents/orchestrator.py                  evaluate_client/evaluate_book -- the one pipeline entry point
+agents/model_factory.py                 local Ollama now; Model Gateway branch NOT RUN
+external_events/exposure_qualifier.py   deterministic 3-step exposure qualification
+external_events/event_extraction_agent.py  A1 -- text -> validated ExogenousEvent
+datainsights/correlation/               Signal Bus, Hypothesis Assembler, De-dup
+datainsights/fdm_worklist.py            RM-facing worklist/digest builder
+datainsights/sinks/                     MIMO JSON, Pega event mock, key_mapping, base
+datainsights/agent_trace.py             per-narration audit trail, keyed on recommendation_id
+datainsights/rm_feedback.py             RM response capture (Customer Engaged/Not Appropriate/Remind Me Later)
+datainsights/ml/                        SLOT E2 baselines, compare_baselines.py, scale_evaluation.py
+dashboard/app.py                        Streamlit dashboard -- FDM worklist page has the A3 copilot/feedback panel
+docs/decision_record.md                 the captured NatWest engineering decision record -- check any new decision against this
+docs/fdm_reference.md                   the captured Federated Data Model reference
+docs/architecture.md                    full system design + diagram (FDM build is primary; legacy is an appendix)
+docs/current_state.md                   verified vs. NOT RUN vs. not built, plus "Run it yourself"
+docs/agentic_plan.md                    the agentic build plan (A0-A5), phase-by-phase execution status
+docs/gap_analysis.md                    current state vs. decision record / agentic plan, table form
+docs/adding_a_new_domain.md             step-by-step checklist for a new domain (proven with Risk)
 ```
 
-## 11. Working conventions this project holds itself to (useful if another session continues this work)
+## 11. Working conventions this project holds itself to
 
-- **Verify, don't assert.** Every claim of "N tests pass" or "the pipeline
-  ran" in this project's history was backed by an actual run in that
-  session, not stated from memory of an earlier run.
-- **Separate verified facts from assumptions explicitly**, every time —
-  in code comments, in docstrings, in any report back.
-- **Fix root causes, not symptoms.** E.g.: rather than answer a
-  hypothetical dollar figure in conversation, the simulator was changed to
-  produce an honest one.
-- **Disclose limitations inline, in the artifact itself** — not just in a
-  conversation that won't travel with the file. The "illustrative" tags on
-  every sized offer are a direct example of this.
-- **One phase at a time.** Don't rebuild what already works; extend it.
-- **No fabricated precision.** If a number isn't grounded in either real
-  data or a disclosed heuristic, don't state it.
+- **Verify, don't assert.** Every claim of "N tests pass" or "the
+  pipeline ran" was backed by an actual run in that session. One
+  concrete example this project holds itself to: a Step 3 scale-up once
+  measured a 23x-per-client slowdown; before writing it down as a
+  finding, it was profiled, re-run isolated, and traced to system
+  contention from other concurrent work, not a real scaling cliff — the
+  corrected number is what's in `docs/current_state.md`, with the false
+  alarm disclosed alongside it, not hidden.
+- **Separate verified facts from assumptions explicitly**, every time.
+- **Disclose limitations inline, in the artifact itself.** The
+  "illustrative" tags on every sized offer, and `sizing_basis`'s
+  machine-readable method string, are direct examples.
+- **One phase at a time.** Don't rebuild what already works; extend it —
+  the domain registry (M7) and every agent in M8 were built on top of
+  the existing detector/correlation layer, not instead of it.
+- **No fabricated precision.** If a number isn't grounded in real data
+  or a disclosed heuristic, don't state it.
+- **An agent's validation failure degrades to a template/fact-list, never
+  raises and never emits an unvalidated claim.** Every agent in this
+  build (narrator, A1 extractor, A2 investigator, A3 copilot) follows
+  this identically.
+
+## 12. NatWest VDI handoff checklist — what changes when moving machines
+
+1. **Swap the data source.** `FdmLocalSource` → a real
+   `FdmSnowflakeSource` reading `ENT_PRD.TIER0_PRS` directly. Same
+   `DataSource` interface — detector/agent/correlation code should not
+   need to change if `config/entities_fdm.yaml`'s contract still holds
+   against the real physical tables (it may not for tables this pass
+   had to invent columns for — see `code_domains.py`'s
+   `invented_domains()`).
+2. **Swap the model provider.** `agents/model_factory.get_model()`'s
+   `ModelConfig.mode` changes from `"local"` to `"model_gateway"`, and
+   that branch (currently a documented `NotImplementedError`) gets a
+   real internal Model Gateway client. No other agent code — narrator,
+   A1, A2, A3 — should need to change; that's the entire point of the
+   factory.
+3. **Real Phase 0/1 first.** Nothing above substitutes for actual
+   stakeholder conversations (MIMO AIEngine, C&I Decisioning) or a real
+   MIMO insight against the live platform.
+4. **Re-run Phase 7 SME validation** against real value domains once
+   accessible — every `SOURCE = "INVENTED"` marker in `code_domains.py`
+   needs replacing or explicit sign-off; Risk/Treasury's remaining
+   column shapes need confirming before `pd_migration`/Treasury
+   detectors can be built for real.
+5. **Enter AgentCore governance for real** only with a working artefact
+   and evidence in hand. Three of the governance table's requirements
+   are already true by construction — human-in-the-loop, audit trail
+   (`datainsights/agent_trace.py`), and feedback capture
+   (`datainsights/rm_feedback.py`) — see `agents/README.md`'s table for
+   what that does and doesn't cover.
+6. **Real notice/news text for A1**, and enough real client data for A1
+   extraction to have something to qualify against — on synthetic data,
+   even a real notice about a real event only produces an illustrative
+   result, since the client base is Faker output either way.
+
+---
+
+## Appendix: the original legacy-schema pipeline
+
+A separate, smaller pipeline (`datainsights/cli.py`,
+`detection_engine/large_incoming_payment.py`, `datainsights/narrative/`,
+`evaluation/evaluate.py`) predates the FDM build above and still passes
+its own tests. It is kept only because this project's working
+convention ("continue from existing work, don't rebuild") never made it
+a target to replace — it does not add capability the FDM build lacks,
+is not extended or referenced by anything above, and new work should
+not add to it. If you need its detail: it read `config/entities.yaml`
+through `OfflineLocalSource`, ran one endogenous detector
+(`large_incoming_payment`, MAD-based) and one exogenous detector
+(`external_macro_event`, sector/country match), and wrote to its own
+`datainsights/worklist.py`/`digest.py`/`state.py`. `docs/architecture.md`'s
+own appendix has the full diagram if you need to touch it; otherwise
+treat sections 1–12 above as the current, and only, design worth
+carrying forward.
 
 ---
 

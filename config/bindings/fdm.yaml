@@ -1,0 +1,77 @@
+# FDM binding -- maps config/entities_fdm.yaml's physical entities onto
+# config/semantic_model.yaml's canonical concepts. docs/generalization_plan.md
+# Phase 1. This is the FIRST binding; config/bindings/legacy.yaml (built
+# alongside it) is the second, proving R1 without invented data.
+schema: fdm
+contract_ref: config/entities_fdm.yaml
+
+concepts:
+  Party:
+    entity: PARTY
+    bitemporal: {valid_from: EFFECTIVE_START_DT, valid_to: EFFECTIVE_END_DT}
+    fields:
+      party_id: PRTY_ID
+      segment: PRTY_SGMNT_CD
+    derived:
+      high_risk_flag: {from: HIGH_RSK_CUST_IND, map: {"Y": true, "N": false}}
+    joins:
+      - {entity: PARTY_DEMOGRAPHIC, "on": PRTY_ID, fields: {sector_code: NACE_SECTION_CD, sector_name: SECTOR_NM}}
+      - {entity: PARTY_LOCATOR, "on": PRTY_ID, fields: {country_code: COUNTRY_CD}}
+
+  Account:
+    entity: AGREEMENT
+    bitemporal: {valid_from: EFFECTIVE_START_DT, valid_to: EFFECTIVE_END_DT}
+    fields:
+      account_id: AGRMNT_ID
+      product_code: AGRMNT_TYP_CD
+      original_limit: AGRMNT_ORIG_LIM
+      close_date: AGRMNT_CLOSE_DT
+    derived:
+      product_class:
+        from: AGRMNT_TYP_CD
+        map: {DEP: deposit, LON: facility, ODR: facility, MTG: mortgage}
+        default: other
+      currency: {const: EUR}
+    joins:
+      - {entity: PARTY_AGREEMENT, "on": AGRMNT_ID, fields: {party_id: PRTY_ID}}
+      - {entity: MORTGAGE_AGREEMENT, "on": AGRMNT_ID, fields: {fixed_rate_end_date: MORT_FXED_RT_END_DT}, optional: true}
+
+  BalanceObservation:
+    entity: AGREEMENT_DAILY_BALANCE
+    fields:
+      account_id: AGRMNT_ID
+      observed_at: AGRMNT_DLY_BAL_STRT_DTTM
+      balance: AGRMNT_LDGR_BAL_AMT
+
+  Transaction:
+    entity: EVENT_FINANCIAL
+    fields:
+      transaction_id: EVNT_ID
+      account_id: AGRMNT_ID_TRN_ACCT
+      posted_at: FIN_EVNT_PSTD_DT
+      amount: FIN_EVNT_AMT
+      currency: FIN_EVNT_CURY_CD
+    derived:
+      direction: {from: FIN_EVNT_SBTYP_CD, map: {CRD: credit, DBT: debit}}
+
+  RiskGradeVersion:
+    entity: PARTY
+    bitemporal: {valid_from: EFFECTIVE_START_DT, valid_to: EFFECTIVE_END_DT}
+    fields:
+      party_id: PRTY_ID
+      grade_code: RSK_GRD_CD
+      grade_value: RSK_GRD_VAL
+
+  CollateralValuation:
+    entity: COLLATERAL_ITEM_VALUE
+    bitemporal: {valid_from: EFFECTIVE_START_DT, valid_to: EFFECTIVE_END_DT}
+    fields:
+      collateral_id: CLTRL_ITEM_ID
+      valued_at: EFFECTIVE_START_DT
+      value: CLTRL_VAL_AMT
+    joins:
+      - {entity: AGREEMENT_COLLATERAL_ITEM, "on": CLTRL_ITEM_ID, fields: {account_id: AGRMNT_ID}}
+      - {entity: AGREEMENT, "on": AGRMNT_ID, fields: {original_limit: AGRMNT_ORIG_LIM}}
+
+  PartyMetricVersion:
+    unavailable: "PARTY_METRIC not in config/entities_fdm.yaml's contract -- no DDL captured. See docs/adding_a_new_domain.md; do not invent this table."
