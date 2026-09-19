@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS agent_traces (
     narrative_source TEXT NOT NULL,
     latency_seconds REAL NOT NULL,
     fell_back INTEGER NOT NULL,
+    prompt_version INTEGER,
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_agent_traces_recommendation
@@ -48,6 +49,13 @@ class AgentTrace:
     latency_seconds: float
     fell_back: bool
     recommendation_id: str | None = None
+    # datainsights/prompts.py's load_prompt() version for this domain's
+    # narration template -- None for a narrative_source that isn't
+    # prompt-driven (a deterministic-template fallback still carries the
+    # version of the prompt that WOULD have been used, since
+    # DomainAgent.prompt_version is set at construction time either way;
+    # only a non-DomainAgent caller would ever leave this None).
+    prompt_version: int | None = None
 
 
 @contextmanager
@@ -56,6 +64,13 @@ def connect(path: str):
     con = sqlite3.connect(path)
     try:
         con.executescript(SCHEMA)
+        # Migration for a pre-existing local var/agent_traces.db written
+        # before prompt_version existed -- CREATE TABLE IF NOT EXISTS
+        # above is a no-op against an already-created table, so the
+        # column has to be added explicitly here, once.
+        existing_cols = {row[1] for row in con.execute("PRAGMA table_info(agent_traces)")}
+        if "prompt_version" not in existing_cols:
+            con.execute("ALTER TABLE agent_traces ADD COLUMN prompt_version INTEGER")
         yield con
         con.commit()
     finally:
@@ -65,16 +80,18 @@ def connect(path: str):
 def record(con: sqlite3.Connection, trace: AgentTrace) -> None:
     con.execute(
         """INSERT INTO agent_traces
-           (prty_id, domain, recommendation_id, narrative_source, latency_seconds, fell_back, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+           (prty_id, domain, recommendation_id, narrative_source, latency_seconds, fell_back,
+            prompt_version, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
         (trace.prty_id, trace.domain, trace.recommendation_id, trace.narrative_source,
-         trace.latency_seconds, int(trace.fell_back), datetime.now(timezone.utc).isoformat()),
+         trace.latency_seconds, int(trace.fell_back), trace.prompt_version,
+         datetime.now(timezone.utc).isoformat()),
     )
 
 
 def traces_for_recommendation(con: sqlite3.Connection, recommendation_id: str) -> list[dict]:
     cur = con.execute(
-        "SELECT prty_id, domain, narrative_source, latency_seconds, fell_back, created_at "
+        "SELECT prty_id, domain, narrative_source, latency_seconds, fell_back, prompt_version, created_at "
         "FROM agent_traces WHERE recommendation_id = ? ORDER BY created_at", (recommendation_id,))
     cols = [d[0] for d in cur.description]
     return [dict(zip(cols, row)) for row in cur.fetchall()]

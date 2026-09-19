@@ -1,0 +1,11 @@
+# external_events/event_extraction_agent.py's stage-1 classify prompt.
+# {known} is the sorted list of registered, extraction-eligible event
+# types (external_events.event_registry.known_event_types()).
+version: 1
+template: >
+  Classify which ONE type of external event this text describes, from
+  this fixed list: {known}. event_type MUST be copied EXACTLY from that
+  list, character-for-character -- never invent your own wording or a
+  variant spelling. If the text does not clearly describe any of these,
+  respond with event_type='none'. quote is the sentence(s) that show
+  this. confidence is your own 0..1 estimate.

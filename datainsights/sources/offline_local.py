@@ -6,8 +6,7 @@ through DuckDB, validated against config/entities.yaml. This is the
 
 from __future__ import annotations
 
-import os
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -52,7 +51,53 @@ class OfflineLocalSource(DataSource):
             supports_bounded_time_window=True,
             supports_change_detection=False,  # plain CSVs, no CDC metadata
             read_only=True,
+            supports_aggregate_pushdown=True,
         )
+
+    _AGGREGATE_SQL_FUNC = {"mean": "AVG", "sum": "SUM", "count": "COUNT"}
+
+    def aggregate(self, entity: str, *, group_col: str, value_col: str, date_col: str,
+                 agg: str, as_of: date, window_days: Optional[int] = None) -> pd.DataFrame:
+        """T6 (docs/ml_strategy_plan.md §7/§9) -- a windowed per-entity
+        aggregate computed IN DuckDB, not pandas: one row per group_col
+        value, columns [group_col, f'{value_col}_{agg}']. This is what
+        lets datainsights/features.py's compute_many() return features
+        instead of pulling a whole table to a laptop -- the same shift
+        that matters most once a real Snowflake table is behind this
+        interface (a Snowflake-backed source implementing this same
+        method pushes the SAME query server-side).
+
+        agg='last'/'first' use DuckDB's arg_max/arg_min(value, by) --
+        "value at the row with the latest/earliest date_col", matching
+        datainsights/features.py's compute()'s own last/first semantics
+        (by DATE, never by row order)."""
+        if agg not in ("mean", "sum", "count", "last", "first"):
+            raise ValueError(f"unsupported agg: {agg!r} -- must be one of "
+                            f"mean, sum, count, last, first")
+        spec = self._entity_spec(entity)
+        path = self._csv_path(spec["physical_table"])
+
+        where = [f'"{date_col}" <= ?']
+        params: list = [as_of.isoformat()]
+        if window_days is not None:
+            where.append(f'"{date_col}" >= ?')
+            params.append((as_of - timedelta(days=window_days)).isoformat())
+        where_sql = " AND ".join(where)
+
+        out_col = f"{value_col}_{agg}"
+        if agg in self._AGGREGATE_SQL_FUNC:
+            select_sql = f'{self._AGGREGATE_SQL_FUNC[agg]}("{value_col}") AS "{out_col}"'
+        else:
+            func = "arg_max" if agg == "last" else "arg_min"
+            select_sql = f'{func}("{value_col}", "{date_col}") AS "{out_col}"'
+
+        query = (
+            f'SELECT "{group_col}", {select_sql} '
+            f"FROM read_csv_auto('{path.as_posix()}') "
+            f"WHERE {where_sql} "
+            f'GROUP BY "{group_col}"'
+        )
+        return self._con.execute(query, params).fetchdf()
 
     def _entity_spec(self, entity: str) -> dict:
         entities = self._contract.get("entities", {})

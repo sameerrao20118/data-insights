@@ -1,0 +1,2 @@
+event_id,event_date,event_type,affected_country,affected_sector,severity,estimated_value_eur,currency_pair,currency,pct_change,window_days
+c1a2b3c4-1111-4c3d-9a7e-fx0000000001,2025-08-15,fx_rate_move,,,4,0,EUR/USD,USD,-0.06,30

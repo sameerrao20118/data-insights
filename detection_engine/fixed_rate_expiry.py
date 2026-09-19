@@ -17,7 +17,7 @@ from datetime import date, datetime, timezone
 
 import pandas as pd
 
-REQUIRED_COLUMNS = ["PRTY_ID", "AGRMNT_ID", "MORT_FXED_RT_END_DT"]
+REQUIRED_COLUMNS = ["party_id", "account_id", "fixed_rate_end_date"]
 
 
 @dataclass(frozen=True)
@@ -47,26 +47,26 @@ def detect(mortgages: pd.DataFrame, config: DetectorConfig, run_id: str, as_of: 
     if missing:
         raise ValueError(f"fixed_rate_expiry.detect missing required columns: {missing}")
 
-    m = mortgages.dropna(subset=["MORT_FXED_RT_END_DT"]).copy()
-    m = m[m["MORT_FXED_RT_END_DT"] != ""]
+    m = mortgages.dropna(subset=["fixed_rate_end_date"]).copy()
+    m = m[m["fixed_rate_end_date"] != ""]
     if m.empty:
         return pd.DataFrame(columns=DETECTION_COLUMNS)
 
-    m["MORT_FXED_RT_END_DT"] = pd.to_datetime(m["MORT_FXED_RT_END_DT"])
-    m["days_to_expiry"] = (m["MORT_FXED_RT_END_DT"] - pd.Timestamp(as_of)).dt.days
+    m["fixed_rate_end_date"] = pd.to_datetime(m["fixed_rate_end_date"])
+    m["days_to_expiry"] = (m["fixed_rate_end_date"] - pd.Timestamp(as_of)).dt.days
     now = datetime.now(timezone.utc).isoformat()
 
     hits = m[(m["days_to_expiry"] >= 0) & (m["days_to_expiry"] <= config.horizon_days)]
     out_rows = []
     for _, row in hits.iterrows():
         out_rows.append({
-            "detection_id": f"{config.rule_version}:{row['AGRMNT_ID']}",
+            "detection_id": f"{config.rule_version}:{row['account_id']}",
             "rule_version": config.rule_version,
-            "prty_id": row["PRTY_ID"],
-            "agrmnt_id": row["AGRMNT_ID"],
+            "prty_id": row["party_id"],
+            "agrmnt_id": row["account_id"],
             "event_date": as_of.isoformat(),
             "detection_as_of": now,
-            "fixed_rate_end_date": row["MORT_FXED_RT_END_DT"].date().isoformat(),
+            "fixed_rate_end_date": row["fixed_rate_end_date"].date().isoformat(),
             "days_to_expiry": int(row["days_to_expiry"]),
             "status": "detected",
         })

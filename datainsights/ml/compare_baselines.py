@@ -30,8 +30,11 @@ import time
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+import pandas as pd
+
 from datainsights.runtime import build_runtime
-from datainsights.sources.fdm_local import FdmLocalSource
+from datainsights.semantic.binding import load_binding
+from datainsights.semantic.canonical import CanonicalSource
 from detection_engine import cash_buildup, revenue_pattern_change
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -65,48 +68,57 @@ def _last_row_per_agreement(result, id_col: str):
     return result.sort_values("event_date").groupby(id_col, as_index=False).tail(1)
 
 
-def compare_cash_buildup(source: FdmLocalSource, rules: dict, as_of: date) -> list[Row]:
+def _canonical(source, binding_name: str) -> CanonicalSource:
+    return CanonicalSource(source, load_binding(binding_name))
+
+
+def compare_cash_buildup(source, rules: dict, as_of: date, binding_name: str = "fdm") -> list[Row]:
+    """Whole book in ONE canonical read per concept (R1/R3/R13,
+    docs/refactor_plan.md) -- no FDM-only source methods, so this now
+    runs against any bound schema, not just fdm."""
     det_cfg = cash_buildup.DetectorConfig.from_rules_dict(rules)
     iso_cfg = cash_buildup.DetectorConfig(**{**det_cfg.__dict__, "baseline": "isolation_forest"})
+    canonical = _canonical(source, binding_name)
 
-    agr = source.agreement(as_of)
-    party_agreement, _ = source.read_entity("PARTY_AGREEMENT", allow_unbounded=True)
-    dep_ids = set(agr[agr["AGRMNT_TYP_CD"] == "DEP"]["AGRMNT_ID"])
-    bal = source.daily_balance(as_of - timedelta(days=det_cfg.window_days * 2), as_of)
-    bal = bal[bal["AGRMNT_ID"].isin(dep_ids)].merge(
-        party_agreement[["AGRMNT_ID", "PRTY_ID"]], on="AGRMNT_ID")
+    accounts = canonical.read("Account", as_at=as_of)
+    deposits = accounts[accounts["product_class"] == "deposit"][["account_id", "party_id"]]
+    balances = canonical.read("BalanceObservation")
+    balances = balances.merge(deposits, on="account_id")
+    ts = pd.to_datetime(balances["observed_at"])
+    balances = balances[(ts >= pd.Timestamp(as_of - timedelta(days=det_cfg.window_days * 2)))
+                        & (ts <= pd.Timestamp(as_of))]
 
     rows = []
-    for agrmnt_id, grp in bal.groupby("AGRMNT_ID"):
+    for account_id, grp in balances.groupby("account_id"):
         det_last = _last_row_per_agreement(cash_buildup.detect(grp, det_cfg, "compare"), "agrmnt_id")
         iso_last = _last_row_per_agreement(cash_buildup.detect(grp, iso_cfg, "compare"), "agrmnt_id")
-        prty_id = grp["PRTY_ID"].iloc[0]
+        prty_id = grp["party_id"].iloc[0]
         det_status = det_last.iloc[0]["status"] if not det_last.empty else "not_detected"
         iso_status = iso_last.iloc[0]["status"] if not iso_last.empty else "not_detected"
-        rows.append(Row(prty_id, agrmnt_id, det_status, iso_status))
+        rows.append(Row(prty_id, account_id, det_status, iso_status))
     return rows
 
 
-def compare_revenue_pattern_change(source: FdmLocalSource, rules: dict, as_of: date) -> list[Row]:
+def compare_revenue_pattern_change(source, rules: dict, as_of: date, binding_name: str = "fdm") -> list[Row]:
     det_cfg = revenue_pattern_change.DetectorConfig.from_rules_dict(rules)
     iso_cfg = revenue_pattern_change.DetectorConfig(**{**det_cfg.__dict__, "baseline": "isolation_forest"})
+    canonical = _canonical(source, binding_name)
 
-    agr = source.agreement(as_of)
-    party_agreement, _ = source.read_entity("PARTY_AGREEMENT", allow_unbounded=True)
-    dep_ids = set(agr[agr["AGRMNT_TYP_CD"] == "DEP"]["AGRMNT_ID"])
-    events = source.financial_event(as_of - timedelta(days=det_cfg.window_days * 3), as_of)
-    events = events[events["AGRMNT_ID_TRN_ACCT"].isin(dep_ids)].rename(
-        columns={"AGRMNT_ID_TRN_ACCT": "AGRMNT_ID"}).merge(
-        party_agreement[["AGRMNT_ID", "PRTY_ID"]], on="AGRMNT_ID")
+    accounts = canonical.read("Account", as_at=as_of)
+    deposits = accounts[accounts["product_class"] == "deposit"][["account_id", "party_id"]]
+    events = canonical.read("Transaction").merge(deposits, on="account_id")
+    ts = pd.to_datetime(events["posted_at"])
+    events = events[(ts >= pd.Timestamp(as_of - timedelta(days=det_cfg.window_days * 3)))
+                    & (ts <= pd.Timestamp(as_of))]
 
     rows = []
-    for agrmnt_id, grp in events.groupby("AGRMNT_ID"):
+    for account_id, grp in events.groupby("account_id"):
         det_last = _last_row_per_agreement(revenue_pattern_change.detect(grp, det_cfg, "compare"), "agrmnt_id")
         iso_last = _last_row_per_agreement(revenue_pattern_change.detect(grp, iso_cfg, "compare"), "agrmnt_id")
-        prty_id = grp["PRTY_ID"].iloc[0]
+        prty_id = grp["party_id"].iloc[0]
         det_status = det_last.iloc[0]["status"] if not det_last.empty else "not_detected"
         iso_status = iso_last.iloc[0]["status"] if not iso_last.empty else "not_detected"
-        rows.append(Row(prty_id, agrmnt_id, det_status, iso_status))
+        rows.append(Row(prty_id, account_id, det_status, iso_status))
     return rows
 
 

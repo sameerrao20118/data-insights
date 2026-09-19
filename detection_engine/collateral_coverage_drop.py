@@ -21,8 +21,8 @@ from datetime import date, datetime, timezone
 
 import pandas as pd
 
-REQUIRED_COLUMNS = ["PRTY_ID", "AGRMNT_ID", "CLTRL_ITEM_ID", "AGRMNT_ORIG_LIM",
-                    "CLTRL_VAL_AMT", "EFFECTIVE_START_DT"]
+REQUIRED_COLUMNS = ["party_id", "account_id", "collateral_id", "original_limit",
+                    "value", "valid_from"]
 
 
 @dataclass(frozen=True)
@@ -63,18 +63,18 @@ def detect(coverage_history: pd.DataFrame, config: DetectorConfig, run_id: str, 
         return pd.DataFrame(columns=DETECTION_COLUMNS)
 
     ch = coverage_history.copy()
-    ch["EFFECTIVE_START_DT"] = pd.to_datetime(ch["EFFECTIVE_START_DT"])
-    ch = ch[ch["EFFECTIVE_START_DT"] <= pd.Timestamp(as_at)]
-    ch = ch[ch["AGRMNT_ORIG_LIM"] > 0]
+    ch["valid_from"] = pd.to_datetime(ch["valid_from"])
+    ch = ch[ch["valid_from"] <= pd.Timestamp(as_at)]
+    ch = ch[ch["original_limit"] > 0]
     if ch.empty:
         return pd.DataFrame(columns=DETECTION_COLUMNS)
-    ch["coverage_pct"] = ch["CLTRL_VAL_AMT"] / ch["AGRMNT_ORIG_LIM"]
+    ch["coverage_pct"] = ch["value"] / ch["original_limit"]
 
     now = datetime.now(timezone.utc).isoformat()
     out_rows = []
 
-    for (agrmnt_id, cltrl_item_id), grp in ch.groupby(["AGRMNT_ID", "CLTRL_ITEM_ID"], sort=False):
-        grp = grp.sort_values("EFFECTIVE_START_DT")
+    for (agrmnt_id, cltrl_item_id), grp in ch.groupby(["account_id", "collateral_id"], sort=False):
+        grp = grp.sort_values("valid_from")
         if len(grp) < 2:
             continue  # no prior version to compare against -- can't tell "drop" from "always thin"
         current = grp.iloc[-1]
@@ -88,7 +88,7 @@ def detect(coverage_history: pd.DataFrame, config: DetectorConfig, run_id: str, 
         out_rows.append({
             "detection_id": f"{config.rule_version}:{agrmnt_id}:{cltrl_item_id}",
             "rule_version": config.rule_version,
-            "prty_id": current["PRTY_ID"],
+            "prty_id": current["party_id"],
             "agrmnt_id": agrmnt_id,
             "cltrl_item_id": cltrl_item_id,
             "event_date": as_at.isoformat(),

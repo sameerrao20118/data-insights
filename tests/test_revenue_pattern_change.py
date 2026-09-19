@@ -12,13 +12,13 @@ CFG = DetectorConfig(window_days=60, min_credits_per_window=3, min_change_pct=0.
 
 
 def credit(agrmnt_id, prty_id, d: date, amount):
-    return {"PRTY_ID": prty_id, "AGRMNT_ID": agrmnt_id, "FIN_EVNT_PSTD_DT": d.isoformat(),
-            "FIN_EVNT_AMT": amount, "FIN_EVNT_SBTYP_CD": "CRD"}
+    return {"party_id": prty_id, "account_id": agrmnt_id, "posted_at": d.isoformat(),
+            "amount": amount, "direction": "credit"}
 
 
 def debit(agrmnt_id, prty_id, d: date, amount):
-    return {"PRTY_ID": prty_id, "AGRMNT_ID": agrmnt_id, "FIN_EVNT_PSTD_DT": d.isoformat(),
-            "FIN_EVNT_AMT": amount, "FIN_EVNT_SBTYP_CD": "DBT"}
+    return {"party_id": prty_id, "account_id": agrmnt_id, "posted_at": d.isoformat(),
+            "amount": amount, "direction": "debit"}
 
 
 def test_step_increase_detected():

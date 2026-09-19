@@ -1,0 +1,99 @@
+# Declarative exogenous event-type registry (docs/generalization_plan.md
+# Phase 2, R2). Registering a NEW event type here -- and, if it needs one,
+# a new named check in external_events/exposure_checks.py -- is the whole
+# job: external_events/exposure_qualifier.py's qualifies() and
+# datainsights/correlation/hypothesis.py's assemble() both read this file,
+# neither has a per-type branch to edit.
+#
+# match: predicates evaluated against the canonical Party record (see
+# config/semantic_model.yaml). `equals` compares a Party field to a field
+# on the event (an ExogenousEvent attribute, or "payload.<key>" for a
+# type-specific field); `wildcard_if_empty: true` means an empty event
+# field applies to every party (the existing "" == broadcast convention
+# external_macro_event.py established).
+#
+# exposure: `all_of` is a list of named checks from
+# external_events/exposure_checks.py's CHECK_LIBRARY, all of which must
+# pass for the event to qualify for this client. `magnitude` says which
+# check's result field becomes the qualification's 0..1 magnitude (or
+# `from_payload` to read straight off the event instead).
+#
+# correlation: read by datainsights/correlation/hypothesis.py when this
+# event_type confirms a recommendation -- overrides the endogenous
+# signal's default hypothesis text, and (for a revenue category) decides
+# how -- or whether -- an offer gets sized.
+#
+# extraction (optional -- a type with no `extraction:` block is not
+# offered to external_events/event_extraction_agent.py at all):
+# `core_fields` lists which of ExogenousEvent's fixed fields
+# (affected_country, affected_sector, severity, estimated_value_eur)
+# this type's own text-extraction populates -- each is a dict so a
+# field can carry `grounded_in_quote: true` (the value must trace to an
+# actual number in the LLM's quoted citation, generalizing the
+# EUR-currency-marker check event_extraction_agent.py's docstring
+# describes) plus `currency` (which currency marker counts as a match,
+# vs. a same-magnitude number tagged with a DIFFERENT currency being a
+# mismatch, not a match). A payload field (below) can carry the same
+# `grounded_in_quote`/`currency`, plus `pattern` (a regex the extracted
+# string must fullmatch) and `enum` (an allowed-value list) --
+# event_extraction_agent.py's dynamic per-type pydantic model and
+# validation are both built from these, not hardcoded per type.
+
+contract_version: 1
+
+event_types:
+  public_tender_award:
+    description: "Public-sector tender awarded to a company in a sector/country"
+    source: {name: TED, real_source_type: "TED (Tenders Electronic Daily) API", extraction_needed: true}
+    payload: {}   # estimated_value_eur/affected_sector/affected_country are core ExogenousEvent fields
+    extraction:
+      core_fields:
+        affected_country: {pattern: "^[A-Z]{2}$"}
+        affected_sector: {enum: [A, C, D, F, G, H, I, J, L, M, O, Q]}
+        severity: {min: 1, max: 5}
+        estimated_value_eur: {min_exclusive: 0, grounded_in_quote: true, currency: EUR}
+    match:
+      - {field: sector_code, equals: affected_sector, wildcard_if_empty: true}
+      - {field: country_code, equals: affected_country, wildcard_if_empty: true}
+    exposure:
+      all_of:
+        - {check: has_account, product_class: deposit}
+        - {check: recent_signal, signal_type: revenue_pattern_change, within_days: 365}
+      magnitude: {from_check: recent_signal, field: change_pct, clamp: [0, 1]}
+    correlation:
+      hypothesis: >-
+        Winning a public tender creates a cash-flow gap between delivery and
+        payment, confirmed here by the client's own recent revenue growth --
+        working capital sized to the contract is timely before delivery starts.
+      sizing:
+        basis: pct_of_event_value
+        pct: 0.25
+        action_template: >-
+          Offer working-capital financing of ~EUR {sized_offer_eur:,.0f}
+          ({pct_int}% of the EUR {event_value:,.0f} tender value,
+          illustrative) to bridge delivery before payment.
+
+  fx_rate_move:
+    description: "A material move in an exchange rate pair over a short window"
+    source: {name: "ECB SDMX", real_source_type: "ECB exchange-rate reference series", extraction_needed: true}
+    payload:
+      currency_pair: {type: string, required: true, pattern: "^[A-Z]{3}/[A-Z]{3}$"}
+      currency: {type: string, required: true, pattern: "^[A-Z]{3}$"}   # the non-EUR leg a client's own transaction activity is checked against
+      pct_change: {type: float, required: true, grounded_in_quote: true}
+      window_days: {type: int, required: false, default: 30}
+    extraction:
+      core_fields:
+        affected_country: {pattern: "^[A-Z]{2}$", optional: true}
+        severity: {min: 1, max: 5}
+    match:
+      - {field: country_code, equals: affected_country, wildcard_if_empty: true}
+    exposure:
+      all_of:
+        - {check: currency_activity, currency: "payload.currency", within_days: 180, min_transactions: 2}
+      magnitude: {from_payload: pct_change, abs: true, clamp: [0, 1]}
+    correlation:
+      hypothesis: >-
+        A sharp move in a currency the client transacts in changes the value
+        of their open exposure -- worth discussing a hedge, or reviewing
+        timing, alongside whatever else is already prompting this contact.
+      sizing: {basis: not_sized_this_pass, label: "no_exposure_amount_on_file"}

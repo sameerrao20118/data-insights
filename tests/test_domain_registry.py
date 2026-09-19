@@ -23,6 +23,9 @@ from agents.domain_registry import get as agent_get
 from agents.domain_registry import register as agent_register
 from datainsights import domain_registry as data_registry
 
+import agents.tools  # noqa: F401,E402 -- registers the REAL domains; without this the test
+#                       only passed when another test had imported it first (order-dependent)
+
 
 def _dummy_make_tools(source, rules, as_of):
     return ["dummy-tool-for-source-" + str(source)]
@@ -67,7 +70,6 @@ def test_dummy_domain_allowed_actions_and_signal_mapping_without_editing_hypothe
     real_config = data_registry._load()
     fixture = dict(real_config)
     fixture["widgets"] = {
-        "product_codes": {"widget": ["WDG"]},
         "allowed_actions": ["RM to review widget signals", "No action -- monitor only"],
         "signals": {"widget_spike": {"category": "ADVISORY_ONLY", "hypothesis": "Widgets spiked."}},
     }

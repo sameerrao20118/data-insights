@@ -33,9 +33,19 @@ output:
   backend: local
   path: var/insights
 monitor:
-  enabled: false
+  enabled: false            # set true and run `python -m datainsights.monitor` for a clock-driven micro-batch (R11)
   interval_minutes: 60
-  max_concurrent_runs: 1
+  max_concurrent_runs: 1    # R19: a second overlapping run raises, never corrupts state
+  lookback_ref: cash_buildup.window_days   # rows older than this many days never count as "new"
+# R21: who is looking. The demo signs in a supervisor so the whole book is
+# visible; to see the book as ONE relationship manager, no config edit:
+#   DATAINSIGHTS_ROLE=rm DATAINSIGHTS_RM_IDS=RM001 streamlit run dashboard/app.py
+# provider: idp is the Stage-3 contract (declared, NOT RUN).
+identity:
+  provider: local_dev
+  user: demo_supervisor
+  role: supervisor
+  rm_ids: []
 cost:
   paid_llm_calls_allowed: false
   paid_cloud_services_allowed: false

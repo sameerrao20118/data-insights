@@ -35,7 +35,8 @@ def validate_binding(binding: Binding, repo_root: str = ".") -> list[str]:
         if cb.entity not in entities:
             problems.append(f"{concept_name}: entity {cb.entity!r} not in contract {binding.contract_ref!r}")
             continue
-        entity_cols = set(entities[cb.entity].get("required_columns", {}).keys())
+        entity_cols = (set(entities[cb.entity].get("required_columns", {}).keys())
+                      | set(entities[cb.entity].get("optional_columns", {}).keys()))
 
         if cb.bitemporal:
             for label, col in (("valid_from", cb.bitemporal.valid_from), ("valid_to", cb.bitemporal.valid_to)):
@@ -66,7 +67,7 @@ def validate_binding(binding: Binding, repo_root: str = ".") -> list[str]:
             if j.entity not in entities:
                 problems.append(f"{concept_name}: join entity {j.entity!r} not in contract")
                 continue
-            join_cols = set(entities[j.entity].get("required_columns", {}).keys())
+            join_cols = (set(entities[j.entity].get("required_columns", {}).keys()) | set(entities[j.entity].get("optional_columns", {}).keys()))
             if j.on not in available_cols:
                 problems.append(f"{concept_name}: join key {j.on!r} not available yet "
                                 f"(not on {cb.entity} or introduced by an earlier join)")

@@ -1,19 +1,36 @@
 """
-Detector: Large Incoming Payment vs. Client's Own Trailing Baseline.
+Detector: Large Incoming Payment vs. the client's own trailing baseline.
 
-Implements docs/detector_spec_large_incoming_payment.md. Reads ONLY the
-transactions DataFrame handed to it -- never trigger_events.csv, never
-anything from protected_evaluator_only/. This module must not import
-anything from evaluation/.
+R23 (docs/refactor_plan.md §6e): ported from the legacy pipeline's
+detector of the same name into the canonical set -- same statistics
+(rolling median + MAD over strictly-prior credits, an absolute floor per
+currency, a cooldown), now reading canonical Transaction columns
+(config/semantic_model.yaml) so it runs against ANY bound schema, and
+emitting a Signal like every other detector. Spec background:
+docs/detector_spec_large_incoming_payment.md. Reads only the frame it is
+handed -- never labels, never protected_evaluator_only/.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
+
+from detection_engine.signal import Signal, clamp_magnitude
+
+DOMAIN = "deposits"
+SIGNAL_TYPE = "large_incoming_payment"
+
+REQUIRED_COLUMNS = ["party_id", "account_id", "posted_at", "amount", "direction"]
+
+DETECTION_COLUMNS = [
+    "detection_id", "rule_version", "prty_id", "agrmnt_id", "currency", "transaction_id",
+    "event_date", "detection_as_of", "flagged_amount", "baseline_median", "baseline_mad",
+    "baseline_n", "threshold_multiplier", "threshold_floor", "status",
+]
 
 
 @dataclass(frozen=True)
@@ -21,9 +38,11 @@ class DetectorConfig:
     baseline_window_days: int
     min_baseline_transactions: int
     mad_multiplier: float
-    absolute_floor_by_currency: dict
     cooldown_days: int
     rule_version: str
+    absolute_floor: float = 5000.0
+    absolute_floor_by_currency: dict = field(default_factory=dict)
+    magnitude_saturation_at: float = 20.0  # MAD-multiples at which magnitude saturates to 1.0
 
     @classmethod
     def from_rules_dict(cls, rules: dict) -> "DetectorConfig":
@@ -32,128 +51,114 @@ class DetectorConfig:
             baseline_window_days=d["baseline_window_days"],
             min_baseline_transactions=d["min_baseline_transactions"],
             mad_multiplier=d["mad_multiplier"],
-            absolute_floor_by_currency=d["absolute_floor_by_currency"],
             cooldown_days=d["cooldown_days"],
-            rule_version=rules["rule_version"],
+            rule_version=rules.get("fdm_rule_version", "fdm.v1"),
+            absolute_floor=d.get("absolute_floor", 5000.0),
+            absolute_floor_by_currency=d.get("absolute_floor_by_currency") or {},
+            magnitude_saturation_at=d.get("magnitude_saturation_at", 20.0),
         )
 
-
-DETECTION_COLUMNS = [
-    "detection_id", "rule_version", "client_id", "account_id", "currency",
-    "transaction_id", "event_date", "detection_as_of", "flagged_amount",
-    "baseline_median", "baseline_mad", "baseline_n", "threshold_multiplier",
-    "threshold_floor", "status",
-]
+    def floor_for(self, currency) -> float:
+        return float(self.absolute_floor_by_currency.get(str(currency).upper(), self.absolute_floor))
 
 
-def _rolling_median_mad(values: np.ndarray, window_mask_starts: np.ndarray, min_n: int):
-    """For each index i, compute median and MAD of values[window_mask_starts[i]:i]
-    (i.e. strictly prior rows only -- no leakage). Returns (median, mad, n)
-    arrays, NaN where n < min_n."""
+def _rolling_median_mad(values: np.ndarray, window_starts: np.ndarray, min_n: int):
+    """median/MAD of values[window_starts[i]:i] -- strictly prior rows,
+    no leakage. NaN where fewer than min_n prior rows exist."""
     n = len(values)
-    med = np.full(n, np.nan)
-    mad = np.full(n, np.nan)
-    cnt = np.zeros(n, dtype=int)
+    med, mad, cnt = np.full(n, np.nan), np.full(n, np.nan), np.zeros(n, dtype=int)
     for i in range(n):
-        lo = window_mask_starts[i]
-        window = values[lo:i]
+        window = values[window_starts[i]:i]
         cnt[i] = len(window)
         if cnt[i] >= min_n:
             m = np.median(window)
-            med[i] = m
-            mad[i] = np.median(np.abs(window - m))
+            med[i], mad[i] = m, np.median(np.abs(window - m))
     return med, mad, cnt
 
 
 def detect(transactions: pd.DataFrame, config: DetectorConfig, run_id: str) -> pd.DataFrame:
-    """transactions must already satisfy config/entities.yaml's transactions
-    contract (validated by the DataSource layer before this is called).
-    Returns a DataFrame with DETECTION_COLUMNS, one row per evaluated
-    candidate transaction (status may be 'detected' or 'insufficient_evidence';
-    rows below the absolute floor or non-credit are not evaluated at all)."""
-
+    """One row per detected (or insufficient-evidence) credit. Input:
+    canonical Transaction rows for one or more accounts, with party_id
+    attached; `currency` and `transaction_id` optional."""
+    if transactions.empty:
+        return pd.DataFrame(columns=DETECTION_COLUMNS)
     tx = transactions.copy()
-    tx["booking_date"] = pd.to_datetime(tx["booking_date"])
-    credits = tx[tx["direction"] == "credit"].copy()
+    tx["posted_at"] = pd.to_datetime(tx["posted_at"])
+    if "currency" not in tx.columns:
+        tx["currency"] = "EUR"
+    if "transaction_id" not in tx.columns:
+        tx["transaction_id"] = tx["account_id"].astype(str) + ":" + tx["posted_at"].dt.strftime("%Y%m%d") + ":" + tx.groupby("account_id").cumcount().astype(str)
+    credits = tx[tx["direction"] == "credit"]
     if credits.empty:
         return pd.DataFrame(columns=DETECTION_COLUMNS)
 
     now = datetime.now(timezone.utc).isoformat()
     out_rows = []
-
-    for (account_id, currency), grp in credits.groupby(["account_id", "currency"], sort=False):
-        grp = grp.sort_values("booking_date").reset_index(drop=True)
-        dates = grp["booking_date"].values.astype("datetime64[D]")
+    for (prty_id, agrmnt_id, currency), grp in credits.groupby(["party_id", "account_id", "currency"], sort=False):
+        grp = grp.sort_values("posted_at").reset_index(drop=True)
+        dates = grp["posted_at"].values.astype("datetime64[D]")
         amounts = grp["amount"].to_numpy(dtype=float)
-
-        window_start_dt = grp["booking_date"] - pd.Timedelta(days=config.baseline_window_days)
-        window_start_dt = window_start_dt.values.astype("datetime64[D]")
-        # index of the first row with booking_date >= window_start for each i
-        starts = np.searchsorted(dates, window_start_dt, side="left")
-
+        window_start = (grp["posted_at"] - pd.Timedelta(days=config.baseline_window_days)).values.astype("datetime64[D]")
+        starts = np.searchsorted(dates, window_start, side="left")
         med, mad, cnt = _rolling_median_mad(amounts, starts, config.min_baseline_transactions)
-
-        floor = config.absolute_floor_by_currency.get(currency, config.absolute_floor_by_currency.get("EUR", 5000))
-
+        floor = config.floor_for(currency)
         for i in range(len(grp)):
-            row = grp.iloc[i]
-            client_id = row["client_id"]
-            amount = amounts[i]
             n = int(cnt[i])
             if n < config.min_baseline_transactions:
                 status = "insufficient_evidence"
-                threshold_val = np.nan
             else:
-                threshold_val = med[i] + config.mad_multiplier * mad[i]
-                is_hit = (amount > threshold_val) and (amount > floor)
-                status = "detected" if is_hit else "not_detected"
-
+                threshold = med[i] + config.mad_multiplier * mad[i]
+                status = "detected" if (amounts[i] > threshold and amounts[i] > floor) else "not_detected"
             if status == "not_detected":
-                continue  # only persist detections and insufficient_evidence,
-                          # not every evaluated non-event (avoid a row-per-
-                          # transaction audit table growing unboundedly)
-
+                continue
+            row = grp.iloc[i]
             out_rows.append({
                 "detection_id": f"{config.rule_version}:{row['transaction_id']}",
-                "rule_version": config.rule_version,
-                "client_id": client_id,
-                "account_id": account_id,
-                "currency": currency,
-                "transaction_id": row["transaction_id"],
-                "event_date": row["booking_date"].date().isoformat(),
-                "detection_as_of": now,
-                "flagged_amount": round(float(amount), 2),
+                "rule_version": config.rule_version, "prty_id": prty_id, "agrmnt_id": agrmnt_id,
+                "currency": str(currency).upper(), "transaction_id": row["transaction_id"],
+                "event_date": row["posted_at"].date().isoformat(), "detection_as_of": now,
+                "flagged_amount": round(float(amounts[i]), 2),
                 "baseline_median": None if np.isnan(med[i]) else round(float(med[i]), 2),
                 "baseline_mad": None if np.isnan(mad[i]) else round(float(mad[i]), 2),
-                "baseline_n": n,
-                "threshold_multiplier": config.mad_multiplier,
-                "threshold_floor": floor,
+                "baseline_n": n, "threshold_multiplier": config.mad_multiplier, "threshold_floor": floor,
                 "status": status,
             })
-
-    result = pd.DataFrame(out_rows, columns=DETECTION_COLUMNS)
-    return result
+    return pd.DataFrame(out_rows, columns=DETECTION_COLUMNS)
 
 
 def apply_cooldown(detections: pd.DataFrame, config: DetectorConfig) -> pd.DataFrame:
-    """Mark detections that fall within cooldown_days of an earlier
-    'detected' row for the same (client_id, account_id) as status
-    'suppressed_cooldown', keeping the earliest one active. Operates only on
-    status == 'detected' rows; insufficient_evidence rows pass through."""
+    """A 'detected' row within cooldown_days of an earlier detection on
+    the same account becomes 'suppressed_cooldown' -- one conversation,
+    not one per payment."""
     if detections.empty:
         return detections
     out = detections.copy()
-    out["event_date_dt"] = pd.to_datetime(out["event_date"])
-    detected_mask = out["status"] == "detected"
+    out["_d"] = pd.to_datetime(out["event_date"])
+    out = out.sort_values(["prty_id", "agrmnt_id", "_d"]).reset_index(drop=True)
+    last_by_acct: dict = {}
+    for i, row in out.iterrows():
+        if row["status"] != "detected":
+            continue
+        key = (row["prty_id"], row["agrmnt_id"])
+        last = last_by_acct.get(key)
+        if last is not None and (row["_d"] - last).days < config.cooldown_days:
+            out.at[i, "status"] = "suppressed_cooldown"
+        else:
+            last_by_acct[key] = row["_d"]
+    return out.drop(columns=["_d"])
 
-    for (client_id, account_id), grp in out[detected_mask].groupby(["client_id", "account_id"]):
-        grp_sorted = grp.sort_values("event_date_dt")
-        last_active_date = None
-        for idx, row in grp_sorted.iterrows():
-            if last_active_date is not None and \
-                    (row["event_date_dt"] - last_active_date).days < config.cooldown_days:
-                out.loc[idx, "status"] = "suppressed_cooldown"
-            else:
-                last_active_date = row["event_date_dt"]
 
-    return out.drop(columns=["event_date_dt"])
+def to_signal(row: pd.Series) -> Signal:
+    med = float(row["baseline_median"] or 0.0)
+    mad = float(row["baseline_mad"] or 0.0)
+    mad_multiples = (float(row["flagged_amount"]) - med) / mad if mad > 0 else 20.0
+    saturation = float(row.get("magnitude_saturation_at", 20.0) or 20.0)
+    return Signal(
+        prty_id=row["prty_id"], signal_type=SIGNAL_TYPE, domain=DOMAIN, direction="increase",
+        magnitude=clamp_magnitude(mad_multiples / saturation),
+        observed_date=pd.to_datetime(row["event_date"]).date(),
+        evidence_ref=f"Transaction:{row['agrmnt_id']}:{row['transaction_id']}:{row['event_date']}",
+        source_tables=("Transaction",),
+        raw_measure={"flagged_amount": float(row["flagged_amount"]), "baseline_median": med,
+                     "baseline_n": int(row["baseline_n"]), "currency": str(row.get("currency", "EUR")).upper()},
+    )

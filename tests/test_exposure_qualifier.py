@@ -14,6 +14,8 @@ import pytest
 import yaml
 
 from external_events.exposure_qualifier import geography_match, load_events, qualifies, sector_match
+from datainsights.semantic.binding import load_binding
+from datainsights.semantic.canonical import CanonicalSource
 from datainsights.sources.fdm_local import FdmLocalSource
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -31,7 +33,11 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture
 def source():
-    return FdmLocalSource(FDM_DIR, CONTRACT_PATH)
+    """Named `source` for minimal test-file churn, but returns a
+    CanonicalSource (docs/generalization_plan.md Phase 1) -- qualifies()/
+    sector_match()/geography_match() all take a CanonicalSource now, not
+    a raw FdmLocalSource."""
+    return CanonicalSource(FdmLocalSource(FDM_DIR, CONTRACT_PATH), load_binding("fdm"))
 
 
 @pytest.fixture

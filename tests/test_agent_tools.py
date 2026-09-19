@@ -12,6 +12,8 @@ import pytest
 import yaml
 
 from agents.tools import make_deposits_tools, make_exogenous_tools, make_lending_tools
+from datainsights.semantic.binding import load_binding
+from datainsights.semantic.canonical import CanonicalSource
 from datainsights.sources.fdm_local import FdmLocalSource
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -28,7 +30,7 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture
 def source():
-    return FdmLocalSource(OUT_DIR, CONTRACT_PATH)
+    return CanonicalSource(FdmLocalSource(OUT_DIR, CONTRACT_PATH), load_binding("fdm"))
 
 
 @pytest.fixture

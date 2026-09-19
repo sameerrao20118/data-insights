@@ -1,0 +1,68 @@
+# Category registry -- R2 (docs/refactor_plan.md §4). Before this file a
+# category was a string literal that ~9 places agreed on by convention
+# (datainsights/correlation/hypothesis.py, datainsights/fdm_worklist.py,
+# datainsights/worklist.py, dashboard/app.py, config/rules.yaml, ...).
+# Adding a seventh meant editing all of them and it was easy to add one
+# WRONGLY: two categories were declared everywhere and reachable from no
+# detector. Now: adding a category is an entry here plus a signal -> category
+# mapping in config/domains_*.yaml. Nothing else. Read by
+# datainsights/category_registry.py; consumed by the assembler, the
+# worklist's revenue model, and the dashboard.
+#
+# revenue_model decides HOW indicative revenue is computed for a sized offer
+# (datainsights/fdm_worklist.py::indicative_revenue_eur): financing = NIM +
+# arrangement fee over the assumed term; treasury = spread on balance;
+# hedging = fee on notional; none = never sized (defensive/relationship
+# categories). The rates themselves stay in config/rules.yaml's
+# fdm_revenue_model -- illustrative planning assumptions, not pricing.
+
+suppressed_action: RM to review before any product conversation -- no offer sized for this recommendation.
+categories:
+  FINANCING_NEED:
+    label: Financing Need
+    description: Likely needs a loan, guarantee, or credit line
+    colour: '#1F6E5C'
+    revenue_model: financing
+    revenue_mechanism: Interest income + origination fees on a new loan/credit line/guarantee
+    talking_point: We noticed your incoming payment pattern has shifted recently. If you're taking on
+      new work, we can look at working-capital lines sized to the contract rather than to last year's
+      balance sheet -- would that be useful to talk through?
+  TREASURY_OPPORTUNITY:
+    label: Treasury Opportunity
+    description: Likely has surplus cash for deposit/investment
+    colour: '#2C6FAA'
+    revenue_model: treasury
+    revenue_mechanism: Fee/spread income from a deposit or short-term investment product
+    talking_point: Your cleared balances have been building for a while. Is that earmarked for something
+      specific, or would it be worth reviewing where it's sitting?
+  HEDGING_NEED:
+    label: Hedging Need
+    description: Likely needs an FX/commodity hedge
+    colour: '#A3791F'
+    revenue_model: hedging
+    revenue_mechanism: Fee income from an FX/commodity hedge
+    talking_point: You're carrying exposure across more than one currency. Would it help to review how
+      much of that is hedged versus running open?
+  CAPEX_FINANCING:
+    label: Capex Financing
+    description: Likely needs equipment/transition financing
+    colour: '#7A4FA0'
+    revenue_model: financing
+    revenue_mechanism: Interest income on equipment/transition financing
+    talking_point: It looks like you may be investing ahead of a change in your operating requirements.
+      Worth a conversation about how that's being funded?
+  RISK_REVIEW:
+    label: Risk Review
+    description: Credit/risk awareness, not a sales opportunity
+    colour: '#9C3D3D'
+    revenue_model: none
+    revenue_mechanism: None -- defensive. Protects existing revenue via a credit/compliance review.
+    talking_point: Internal review item -- do not lead a client conversation with this. Raise with Credit
+      Risk first.
+  ADVISORY_ONLY:
+    label: Advisory Only
+    description: Relationship conversation, no clear product yet
+    colour: '#83897F'
+    revenue_model: none
+    revenue_mechanism: None -- relationship. A conversation worth having, no clear product yet.
+    talking_point: No specific product to lead with. A general relationship check-in is appropriate.

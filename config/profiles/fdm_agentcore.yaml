@@ -1,0 +1,56 @@
+# The AgentCore-shaped counterpart to fdm_local.yaml (docs/generalization_plan.md
+# Phase 0/3). Both profiles drive the exact same code
+# (agents/entrypoint.py's invoke(), agents/orchestrator.py, every
+# detector) -- nothing here is a second implementation, only a
+# different composition of source/model/state/output backends.
+#
+# `python -m agents.demo_fdm_scenario --profile fdm_agentcore` VALIDATES
+# this profile (every field-level check in datainsights/config.py runs)
+# and CONSTRUCTS as far as it honestly can, then raises a plain
+# NotImplementedError naming the exact first blocking reason
+# (source.backend=s3_parquet needs a real s3_uri + AWS credentials) --
+# never a silent fallback to local files. This is the mechanical proof
+# that "local Ollama" and "AgentCore" are the same pipeline wired to two
+# different, honestly-gated sets of backends, not two codebases to keep
+# in sync. See tests/test_runtime.py and tests/test_entrypoint.py's
+# agentcore_entrypoint-vs-invoke equivalence test.
+#
+# NOT RUN: no s3_uri below points at a real bucket, no AWS credentials
+# are configured, and this repo has never actually deployed to AgentCore
+# Runtime -- per CLAUDE.md, that requires your explicit authorization.
+
+config_version: 1
+profile: fdm_agentcore
+runtime:
+  target: agentcore
+source:
+  backend: s3_parquet
+  entity_map_ref: config/entities_fdm.yaml
+  binding: fdm
+  access: read_only
+  cost_policy: no_cost_until_deployed_not_run
+  s3_uri: "s3://REPLACE-ME-bucket/fdm/"
+analytics:
+  backend: duckdb_local
+llm:
+  provider: model_gateway
+  model: REPLACE-ME-internal-model-id
+  allow_remote_inference: false
+  allow_paid_fallback: false
+  fallback: deterministic_template
+event_source:
+  backend: s3
+  s3_uri: "s3://REPLACE-ME-bucket/events/"
+state:
+  backend: dynamodb
+  table_name: REPLACE-ME-agent-traces-table
+output:
+  backend: s3
+  s3_uri: "s3://REPLACE-ME-bucket/insights/"
+monitor:
+  enabled: false
+  interval_minutes: 60
+  max_concurrent_runs: 1
+cost:
+  paid_llm_calls_allowed: false
+  paid_cloud_services_allowed: false

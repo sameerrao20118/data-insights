@@ -161,6 +161,19 @@ keep deterministic as default — disagreement with the challenger isn't
 yet evidence of improvement on data with no real outcome labels to check
 against.
 
+**Self-service layer on top of the same slot** (`docs/ml_strategy_plan.md`,
+baby steps in `docs/ml_quickstart.md`): `onboarding/ml_profiler.py`
+answers "which fields have enough clean per-entity history to be worth a
+challenger" deterministically, for any schema; `config/ml_policy.yaml` +
+`datainsights/ml/policy.py` resolve, per measure, whether a challenger
+runs and with what algorithm — explicit human policy first, then a
+measure the active binding already maps to a canonical concept, then an
+accepted LLM proposal (`onboarding/ml_measure_proposer.py`), last of all
+nothing; `datainsights/ml/runner.py` is `compare_baselines.py`'s logic
+made schema-driven and manifest-writing, exposed via the dashboard's
+**ML opportunities** tab. Coverage today: the `fdm` schema's two known
+E2 measures — legacy/sba report "not wired" rather than fake a result.
+
 ## Config / profile system
 
 `datainsights/config.py` defines small, typed (Pydantic) models for a
@@ -276,7 +289,7 @@ above.
 `docs/generalization_plan.md` is the plan to make the layers above
 schema-agnostic, make exogenous event types registrable in YAML, and run
 the same code locally and on AgentCore via profile-driven composition.
-Two pieces of it are built and verified (`docs/current_state.md`'s M9
+Two pieces of it are built and verified (`docs/changelog.md`'s M9
 section has the full detail):
 
 - **`datainsights/runtime.py`'s `build_runtime(profile)`** is now the
@@ -293,12 +306,19 @@ section has the full detail):
   `config/bindings/fdm.yaml` into the canonical column names
   `config/semantic_model.yaml` defines -- renames, value maps,
   bi-temporal as-at collapse, and multi-hop joins all tested against
-  real data. **Not yet wired to anything**: `detection_engine/`,
-  `agents/tools.py`, `external_events/exposure_qualifier.py`, and
-  `datainsights/fdm_worklist.py` all still depend on physical FDM
-  column names directly -- the rewire that makes that go away, and the
-  second (`legacy`) binding that proves it, are the next scoped pieces
-  of Phase 1, not done yet.
+  real data. **Wired in, rewire DONE**: `agents/tools.py`,
+  `external_events/exposure_qualifier.py`, `agents/orchestrator.py`,
+  `datainsights/fdm_worklist.py`, `agents/investigator_agent.py`, and
+  `agents/entrypoint.py` all read through `CanonicalSource` now. The
+  nine detectors in `detection_engine/` and their unit tests were left
+  untouched -- they still speak the FDM physical vocabulary
+  (`AGRMNT_LDGR_BAL_AMT`, `FIN_EVNT_PSTD_DT`, ...); the fetch layer
+  above translates canonical names back to it, so a new schema needs
+  only a new binding YAML, never a detector edit. A second binding,
+  `config/bindings/legacy.yaml`, proves this against the pre-existing
+  legacy schema (`config/entities.yaml`) --
+  `tests/test_legacy_binding_end_to_end.py` runs the same tool
+  factories, zero code changes, against that real data.
 
 Read `docs/generalization_plan.md` before extending any component above,
 and its build-status notes before assuming a phase is finished.
@@ -320,20 +340,15 @@ and its build-status notes before assuming a phase is finished.
 - AgentCore Runtime, Model Gateway, real MIMO/Pega/S3 publish: all
   contract-and-mock only, per `CLAUDE.md`, until explicitly authorized.
 
-## Appendix: the original legacy-schema pipeline
+## Appendix: the legacy-schema pipeline (retired, R23)
 
-A separate, still-passing pipeline (`datainsights/cli.py`,
-`detection_engine/large_incoming_payment.py`,
-`detection_engine/external_macro_event.py`, `datainsights/narrative/`,
-`evaluation/evaluate.py`) predates the FDM build above and is kept only
-because CLAUDE.md's working style ("continue from existing work, don't
-rebuild") means it was never a target to replace, not because it adds
-capability the FDM build lacks. It reads its own `OfflineLocalSource`/
-`config/entities.yaml` contract, has its own `large_incoming_payment`
-MAD-based detector and `external_macro_event` sector/country detector,
-and writes to a separate `datainsights/worklist.py`/`digest.py`/
-`state.py`. It is not extended or referenced by anything in the FDM
-pipeline above, and new work should not add to it. Run `python -m
-datainsights.cli` / `python -m pytest tests/test_large_incoming_payment.py
-tests/test_external_macro_event.py` if you need to touch it; otherwise
-treat everything above this appendix as the current design.
+The original CLI pipeline (`datainsights/cli.py`, `runner.py`,
+`ranking.py`, `worklist.py`, `state.py`, `digest.py`, `status.py`,
+`detection_engine/external_macro_event.py`, the macro narrator) was
+deleted on 2026-09-19 — two pipelines were permanent cost and the
+second one demonstrated the weaker path. What survived: its schema, as
+`config/bindings/legacy.yaml` + `config/profiles/legacy_local.yaml`, run
+by the one pipeline above; its `large_incoming_payment` detector, ported
+canonically (same statistics, fires on 45 of 606 legacy clients);
+`evaluation/evaluate.py`, kept as the only ground-truth reader until R18.
+`docs/changelog.md` M25 records the move.

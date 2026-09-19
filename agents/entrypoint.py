@@ -27,6 +27,8 @@ from agents.domain_agent import DomainAgent
 from agents.domain_registry import all_specs
 from agents.model_factory import get_model
 from datainsights.runtime import build_runtime
+from datainsights.semantic.binding import load_binding
+from datainsights.semantic.canonical import CanonicalSource
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -72,8 +74,9 @@ def invoke(payload: dict) -> dict:
     model = get_model(rt.model_config) if narrate else None
 
     if domain != "all":
+        canonical = CanonicalSource(source, load_binding(rt.binding_name or "fdm"))
         make_tools = specs[domain].make_tools
-        tools = make_tools(source, rules, as_of) if domain != "exogenous" else []
+        tools = make_tools(canonical, rules, as_of) if domain != "exogenous" else []
         agent = DomainAgent(domain=domain, tools=tools, model=model)
         return asdict(agent.evaluate(prty_id))
 
@@ -95,7 +98,8 @@ def invoke(payload: dict) -> dict:
         event = matches[0]
 
     evaluation = evaluate_client(prty_id, source=source, rules=rules, as_of=as_of,
-                                  model=model, event=event, narrate=narrate)
+                                  model=model, event=event, narrate=narrate,
+                                  binding_name=rt.binding_name or "fdm")
     return {
         "prty_id": evaluation.prty_id,
         "as_of": evaluation.as_of.isoformat(),

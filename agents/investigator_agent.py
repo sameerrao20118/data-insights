@@ -20,22 +20,40 @@ proposed category MUST be one of the signal_type's registered
 category_options (datainsights.domain_registry.category_options()) --
 never free text, never a category outside that fixed set -- and every
 cited evidence_ref must be real, not invented. Any validation failure
-degrades to `None` (no note), never a guessed refinement.
+degrades to a needs_review InvestigationNote, never a guessed
+refinement.
+
+docs/generalization_plan.md Phase 4 -- the A2 consistency fix: a live
+run once proposed HEDGING_NEED while its OWN reasoning said "no
+multi-currency activity found in this client's own transaction
+history" -- backwards, since absence of FX exposure is
+TREASURY_OPPORTUNITY evidence, not HEDGING_NEED evidence. The model's
+prose sounded plausible; the substance was self-contradicting. Fixed
+with a rule, not a prompt tweak: config/domains_fdm.yaml's
+category_options now name a `requires_evidence` predicate per option
+(EVIDENCE_PREDICATES below); `_validate()` recomputes this client's
+tool results directly in Python (never trusting the LLM's paraphrase of
+what it saw) and rejects any proposal whose supporting predicate is
+false, to needs_review.
 """
 
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, timedelta
 
+import pandas as pd
 from pydantic import BaseModel
 from strands import tool
 
 from agents.domain_agent import BANNED_TERMS
 from datainsights.correlation.hypothesis import Recommendation
+from datainsights.domain_registry import category_evidence_requirements as _category_evidence_requirements
+from datainsights.domain_registry import category_for as _category_for
 from datainsights.domain_registry import category_options as _category_options
-from datainsights.sources.fdm_local import FdmLocalSource
+from datainsights.prompts import load_prompt
+from datainsights.semantic.canonical import CanonicalSource
 
 
 class InvestigationFields(BaseModel):
@@ -58,97 +76,163 @@ class InvestigationNote:
     status: str = "proposed"  # "proposed" | "no_change_proposed" | "needs_review"
 
 
-def make_investigator_tools(source: FdmLocalSource, prty_id: str, as_of: date) -> list:
+def _get_client_context(canonical: CanonicalSource, prty_id: str, as_of: date) -> dict:
+    party = canonical.read("Party", as_at=as_of, party_id=prty_id)
+    if party.empty:
+        return {"status": "not_found"}
+    row = party.iloc[0]
+    return {
+        "segment": row.get("segment", ""),
+        "sector": row.get("sector_code", ""),
+        "country": row.get("country_code", ""),
+    }
+
+
+def _get_currency_exposure(canonical: CanonicalSource, prty_id: str, as_of: date) -> dict:
+    accounts = canonical.read("Account", as_at=as_of, party_id=prty_id)
+    currencies: set[str] = set()
+    for account_id in accounts.get("account_id", []):
+        tx = canonical.read("Transaction", account_id=account_id)
+        if not tx.empty and "currency" in tx.columns:
+            currencies |= set(tx["currency"].dropna().unique())
+    non_eur = currencies - {"EUR"}
+    return {"currencies_seen": sorted(currencies), "non_eur_currencies": sorted(non_eur)}
+
+
+def _get_recent_balance_trend(canonical: CanonicalSource, prty_id: str, as_of: date) -> dict:
+    accounts = canonical.read("Account", as_at=as_of, party_id=prty_id)
+    dep = accounts[accounts["product_class"] == "deposit"]
+    if dep.empty:
+        return {"status": "no_deposit_account"}
+    bal = canonical.read("BalanceObservation", account_id=dep.iloc[0]["account_id"])
+    bal = bal[(pd.to_datetime(bal["observed_at"]) >= pd.Timestamp(as_of - timedelta(days=90)))
+             & (pd.to_datetime(bal["observed_at"]) <= pd.Timestamp(as_of))].sort_values("observed_at")
+    if bal.empty:
+        return {"status": "no_balance_history"}
+    first, last = float(bal.iloc[0]["balance"]), float(bal.iloc[-1]["balance"])
+    return {"status": "ok", "balance_90d_ago": round(first, 2), "balance_now": round(last, 2),
+            "direction": "rising" if last > first else "flat_or_falling"}
+
+
+def make_investigator_tools(canonical: CanonicalSource, prty_id: str, as_of: date) -> list:
     """Read-only tools, closed over ONE prty_id -- structurally cannot
     reach another client's data, matching agents/tools.py's binding
-    pattern but with no write/detect capability at all."""
+    pattern but with no write/detect capability at all. Reads through
+    CanonicalSource (docs/generalization_plan.md Phase 1), so these work
+    unchanged against any bound schema -- a binding missing sector/
+    country (e.g. legacy) just answers with empty strings, never a
+    crash. Thin wrappers over the module-level `_get_*` functions above
+    so `investigate()` can recompute the SAME facts directly in Python
+    for `_validate()`'s evidence check, rather than trusting whatever
+    the LLM claims it saw."""
 
     @tool
     def get_client_context() -> dict:
         """This client's segment, sector, and country -- for context
         only, never a basis to invent a number."""
-        party = source.party(as_of)
-        row = party[party["PRTY_ID"] == prty_id]
-        if row.empty:
-            return {"status": "not_found"}
-        demo = source.party_demographic()
-        demo_row = demo[demo["PRTY_ID"] == prty_id]
-        loc = source.party_locator()
-        loc_row = loc[loc["PRTY_ID"] == prty_id]
-        return {
-            "segment": row.iloc[0].get("PRTY_SGMNT_CD", ""),
-            "sector": demo_row.iloc[0].get("NACE_SECTION_CD", "") if not demo_row.empty else "",
-            "country": loc_row.iloc[0].get("COUNTRY_CD", "") if not loc_row.empty else "",
-        }
+        return _get_client_context(canonical, prty_id, as_of)
 
     @tool
     def get_currency_exposure() -> dict:
         """Whether this client's own recorded transactions show any
         non-EUR activity -- the deciding evidence for TREASURY_OPPORTUNITY
-        (simple excess cash) vs HEDGING_NEED (multi-currency exposure).
-        Every FDM amount this build's generator writes is EUR
-        (detection_engine's own CURRENCY_MARKERS note) -- so an honest
-        answer here today is almost always 'no non-EUR activity found',
-        which is itself the correct, disclosed finding, not a tool
-        failure."""
-        events = source.financial_event(as_of - timedelta(days=365), as_of)
-        currencies = set(events.get("FIN_EVNT_CURY_CD", []).unique()) if "FIN_EVNT_CURY_CD" in events else set()
-        non_eur = currencies - {"EUR"}
-        return {"currencies_seen": sorted(currencies), "non_eur_currencies": sorted(non_eur)}
+        (simple excess cash) vs HEDGING_NEED (multi-currency exposure)."""
+        return _get_currency_exposure(canonical, prty_id, as_of)
 
     @tool
     def get_recent_balance_trend() -> dict:
         """This client's deposit balance direction over the last 90
         days -- rising balances lean TREASURY_OPPORTUNITY (idle cash to
         place), flat/no-deposit-account leans neither way on its own."""
-        agr = source.agreement(as_of)
-        pa, _ = source.read_entity("PARTY_AGREEMENT", allow_unbounded=True)
-        ids = pa.loc[pa["PRTY_ID"] == prty_id, "AGRMNT_ID"]
-        dep = agr[agr["AGRMNT_ID"].isin(ids) & (agr["AGRMNT_TYP_CD"] == "DEP")]
-        if dep.empty:
-            return {"status": "no_deposit_account"}
-        bal = source.daily_balance(as_of - timedelta(days=90), as_of)
-        bal = bal[bal["AGRMNT_ID"] == dep.iloc[0]["AGRMNT_ID"]].sort_values("AGRMNT_DLY_BAL_STRT_DTTM")
-        if bal.empty:
-            return {"status": "no_balance_history"}
-        first, last = float(bal.iloc[0]["AGRMNT_LDGR_BAL_AMT"]), float(bal.iloc[-1]["AGRMNT_LDGR_BAL_AMT"])
-        return {"status": "ok", "balance_90d_ago": round(first, 2), "balance_now": round(last, 2),
-                "direction": "rising" if last > first else "flat_or_falling"}
+        return _get_recent_balance_trend(canonical, prty_id, as_of)
 
     return [get_client_context, get_currency_exposure, get_recent_balance_trend]
 
 
-def investigate(recommendation: Recommendation, source: FdmLocalSource, model, as_of: date
-                ) -> InvestigationNote | None:
-    """Only meaningful when recommendation.ambiguous -- callers should
-    check that before spending an LLM call. Returns None (not a note)
-    if the signal type has no registered category_options to choose
-    between, since there's nothing to investigate."""
-    options = _category_options(recommendation.endogenous_signal_type)
+# --- evidence predicates (docs/generalization_plan.md Phase 4, A2 fix) -----
+#
+# Each predicate answers one yes/no question against the SAME facts
+# make_investigator_tools() exposes to the model -- computed directly
+# here, not parsed out of the model's prose, so a predicate can never be
+# fooled by reasoning that merely SOUNDS grounded.
+
+def _predicate_non_eur_currency_activity(tool_results: dict) -> bool:
+    return bool(tool_results.get("get_currency_exposure", {}).get("non_eur_currencies"))
+
+
+def _predicate_balance_rising(tool_results: dict) -> bool:
+    trend = tool_results.get("get_recent_balance_trend", {})
+    return trend.get("status") == "ok" and trend.get("direction") == "rising"
+
+
+EVIDENCE_PREDICATES = {
+    "non_eur_currency_activity": _predicate_non_eur_currency_activity,
+    "balance_rising": _predicate_balance_rising,
+}
+
+
+def _validate(parsed: InvestigationFields, options: list[str], evidence_requirements: dict[str, str],
+             tool_results: dict) -> list[str]:
+    """Every check here runs regardless of what the model claims -- the
+    gate an investigation cannot talk its way past. Mirrors
+    agents/domain_agent.py's own _validate but for a category proposal
+    instead of narrative prose."""
+    problems = []
+    if parsed.proposed_category not in options:
+        problems.append(f"proposed_category {parsed.proposed_category!r} not in {options}")
+    else:
+        predicate_name = evidence_requirements.get(parsed.proposed_category)
+        if predicate_name:
+            predicate = EVIDENCE_PREDICATES[predicate_name]
+            if not predicate(tool_results):
+                problems.append(
+                    f"proposed_category {parsed.proposed_category!r} requires evidence "
+                    f"{predicate_name!r}, but this client's own tool results don't show it "
+                    f"(tool_results={tool_results})"
+                )
+
+    text_blob = f"{parsed.reasoning} {parsed.could_not_determine}".lower()
+    for banned in BANNED_TERMS:
+        if banned in text_blob:
+            problems.append(f"investigation used a disallowed term: {banned!r}")
+    if not parsed.reasoning.strip():
+        problems.append("empty reasoning")
+
+    return problems
+
+
+def investigation_options(recommendation: Recommendation, signals=None) -> list[str]:
+    """R9: what an investigator may choose between. An `ambiguous` signal
+    type has registered category_options; a MULTI-DOMAIN recommendation
+    (R9's second trigger) may choose between the categories its own
+    confirming signals map to, plus the one assemble() picked. Never
+    free text, never a category outside this list."""
+    options = list(_category_options(recommendation.endogenous_signal_type))
+    if not options and signals and len({s.domain for s in signals}) > 1:
+        options = sorted({_category_for(s.signal_type) for s in signals} | {recommendation.nba_category})
+        if len(options) < 2:
+            options = []  # every domain agrees -- nothing to investigate
+    return options
+
+
+def investigate(recommendation: Recommendation, canonical: CanonicalSource, model, as_of: date,
+                signals=None) -> InvestigationNote | None:
+    """Meaningful when recommendation.ambiguous OR the recommendation is
+    confirmed by more than one domain (R9's two Tier-2 triggers) --
+    callers should check that before spending an LLM call. Returns None
+    (not a note) if there are no category options to choose between,
+    since there's nothing to investigate."""
+    options = investigation_options(recommendation, signals)
     if not options:
         return None
+    evidence_requirements = _category_evidence_requirements(recommendation.endogenous_signal_type)
 
     t0 = time.monotonic()
-    tools = make_investigator_tools(source, recommendation.prty_id, as_of)
-    system_prompt = (
-        f"You are investigating ONE ambiguous recommendation for a commercial "
-        f"banking client. The category was provisionally set to "
-        f"{recommendation.nba_category!r} as a simplification. Your job is to "
-        f"gather this client's OWN evidence using the tools available and "
-        f"propose which of these categories actually fits best: {options}. Rules:\n"
-        f"1. Call every available tool before answering.\n"
-        f"2. proposed_category MUST be exactly one string from this list: {options}.\n"
-        f"3. evidence_refs MUST list only evidence_ref strings you can construct "
-        f"from actual tool results, or the client's existing evidence_ref "
-        f"{recommendation.evidence_ref!r} -- never invent one.\n"
-        f"4. reasoning must be grounded ONLY in what the tools returned -- "
-        f"never invent a fact.\n"
-        f"5. could_not_determine: state plainly what evidence would have "
-        f"resolved this if the tools didn't show it (e.g. 'no multi-currency "
-        f"activity found in this client's own transaction history').\n"
-        f"6. Never mention financial crime, sanctions, PEP status, or "
-        f"politically exposed persons.\n"
-        f"This is a synthetic proof-of-concept dataset."
+    tools = make_investigator_tools(canonical, recommendation.prty_id, as_of)
+    template, prompt_version = load_prompt("investigator_agent")
+    system_prompt = template.format(
+        nba_category=recommendation.nba_category, options=options,
+        evidence_ref=recommendation.evidence_ref,
     )
     try:
         from strands import Agent
@@ -172,15 +256,16 @@ def investigate(recommendation: Recommendation, source: FdmLocalSource, model, a
             latency_seconds=time.monotonic() - t0, status="needs_review",
         )
 
-    problems = []
-    if parsed.proposed_category not in options:
-        problems.append(f"proposed_category {parsed.proposed_category!r} not in {options}")
-    text_blob = f"{parsed.reasoning} {parsed.could_not_determine}".lower()
-    for banned in BANNED_TERMS:
-        if banned in text_blob:
-            problems.append(f"investigation used a disallowed term: {banned!r}")
-    if not parsed.reasoning.strip():
-        problems.append("empty reasoning")
+    # Recomputed directly against this client's own data, never trusted
+    # from the model's tool-call transcript -- see this module's
+    # docstring on why (a live run's reasoning claimed the opposite of
+    # what its own cited evidence showed).
+    tool_results = {
+        "get_client_context": _get_client_context(canonical, recommendation.prty_id, as_of),
+        "get_currency_exposure": _get_currency_exposure(canonical, recommendation.prty_id, as_of),
+        "get_recent_balance_trend": _get_recent_balance_trend(canonical, recommendation.prty_id, as_of),
+    }
+    problems = _validate(parsed, options, evidence_requirements, tool_results)
 
     if problems:
         return InvestigationNote(
@@ -196,6 +281,6 @@ def investigate(recommendation: Recommendation, source: FdmLocalSource, model, a
         prty_id=recommendation.prty_id, original_category=recommendation.nba_category,
         proposed_category=parsed.proposed_category, reasoning=parsed.reasoning,
         evidence_refs=tuple(parsed.evidence_refs), could_not_determine=parsed.could_not_determine,
-        narrative_source=f"strands+ollama:investigator", latency_seconds=time.monotonic() - t0,
+        narrative_source="strands+ollama:investigator", latency_seconds=time.monotonic() - t0,
         status=status,
     )

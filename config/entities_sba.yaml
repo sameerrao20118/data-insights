@@ -1,0 +1,66 @@
+# Logical source contract for the `sba` schema -- data_generator/fdm/load_sba.py's
+# output (data_generator/output_fdm_sba/). A third schema, deliberately
+# different from both `fdm` and `legacy`: real commercial entities/sectors
+# (U.S. SBA PPP loan data) with synthetic deposit activity layered on top
+# -- see that script's own docstring for exactly what's real vs synthetic.
+#
+# Same discipline as config/entities.yaml: flat, one-hop tables, no
+# bi-temporal versions (this data has no such history).
+
+contract_version: 1
+
+entities:
+  parties:
+    physical_table: party
+    grain: one row per real SBA-borrower business
+    primary_key: [party_id]
+    required_columns:
+      party_id: {type: string, nullable: false}
+      legal_name: {type: string, nullable: false}
+      naics_code: {type: string, nullable: false, format: "2-digit NAICS sector prefix"}
+      state: {type: string, nullable: false, format: "US state abbreviation"}
+      business_type: {type: string, nullable: false}
+      opened_at: {type: date, nullable: false}
+
+  agreements:
+    physical_table: agreement
+    grain: one row per loan or deposit account -- REAL for product_type_cd=PPP_LOAN
+      (a real disbursed SBA loan), SYNTHETIC for product_type_cd=DEP (a generated
+      deposit account, one per party)
+    primary_key: [agreement_id]
+    required_columns:
+      agreement_id: {type: string, nullable: false}
+      party_id: {type: string, nullable: false}
+      product_type_cd: {type: string, nullable: false, allowed: [PPP_LOAN, DEP]}
+      open_dt: {type: date, nullable: false}
+    optional_columns:
+      orig_limit: {type: decimal, fallback_if_missing: "null = no facility limit (deposit account)"}
+      close_dt: {type: date, fallback_if_missing: "null = still open"}
+      status: {type: string, fallback_if_missing: "unknown (only meaningful for PPP_LOAN rows)"}
+
+  balances:
+    physical_table: balance
+    grain: one row per (synthetic) deposit account per weekly snapshot
+    primary_key: [account_id, observed_at]
+    time_semantics:
+      event_time_field: observed_at   # R5: bounded reads + change detection key on this
+    required_columns:
+      account_id: {type: string, nullable: false}
+      observed_at: {type: date, nullable: false}
+      balance: {type: decimal, nullable: false}
+
+  transactions:
+    physical_table: transaction
+    grain: one row per (synthetic) posted transaction on a deposit account
+    primary_key: [transaction_id]
+    required_columns:
+      transaction_id: {type: string, nullable: false}
+      account_id: {type: string, nullable: false}
+      posted_at: {type: date, nullable: false}
+      amount: {type: decimal, nullable: false}
+      direction: {type: string, nullable: false, allowed: [credit, debit]}
+      currency: {type: string, nullable: false}
+    time_semantics:
+      event_time_field: posted_at
+
+transformations: []

@@ -26,11 +26,13 @@ from datetime import date
 import pandas as pd
 
 from datainsights.correlation.hypothesis import Recommendation
-from datainsights.sources.fdm_local import FdmLocalSource
+from datainsights.semantic.binding import load_binding
+from datainsights import category_registry, domain_registry
+from datainsights.semantic.canonical import CanonicalSource
 
 RM_WORKLIST_COLUMNS = [
-    "rank", "prty_id", "segment", "sector", "country", "nba_category",
-    "revenue_mechanism", "indicative_revenue_eur", "indicative_offer_eur",
+    "rank", "prty_id", "relationship_manager_id", "segment", "sector", "country", "nba_category",
+    "revenue_mechanism", "indicative_revenue_eur", "indicative_offer_eur", "currency",
     "why_now", "hypothesis", "recommended_action", "talking_point",
     "confirming_domains", "signal_strength", "endogenous_signal_type",
     "exogenous_event_type", "exogenous_event_date", "evidence_ref",
@@ -40,55 +42,10 @@ RM_WORKLIST_COLUMNS = [
 # Which revenue mechanism each category earns through. Wording matches
 # datainsights/worklist.py's existing documented mapping so an RM sees the
 # same explanation regardless of which pipeline produced the row.
-REVENUE_MECHANISM = {
-    "FINANCING_NEED": "Interest income + origination fees on a new loan/credit line/guarantee",
-    "CAPEX_FINANCING": "Interest income on equipment/transition financing",
-    "TREASURY_OPPORTUNITY": "Fee/spread income from a deposit or short-term investment product",
-    "HEDGING_NEED": "Fee income from an FX/commodity hedge",
-    "RISK_REVIEW": "None -- defensive. Protects existing revenue via a credit/compliance review.",
-    "ADVISORY_ONLY": "None -- relationship. A conversation worth having, no clear product yet.",
-}
-
-# What the RM can actually open the conversation with. Deliberately a
-# question or an observation, never a pitch -- the evidence supports "this
-# changed, worth a conversation", it does not support "you need this
-# product".
-TALKING_POINT = {
-    "FINANCING_NEED": (
-        "We noticed your incoming payment pattern has shifted recently. If you're taking on "
-        "new work, we can look at working-capital lines sized to the contract rather than to "
-        "last year's balance sheet -- would that be useful to talk through?"
-    ),
-    "CAPEX_FINANCING": (
-        "It looks like you may be investing ahead of a change in your operating requirements. "
-        "Worth a conversation about how that's being funded?"
-    ),
-    "TREASURY_OPPORTUNITY": (
-        "Your cleared balances have been building for a while. Is that earmarked for something "
-        "specific, or would it be worth reviewing where it's sitting?"
-    ),
-    "HEDGING_NEED": (
-        "You're carrying exposure across more than one currency. Would it help to review how "
-        "much of that is hedged versus running open?"
-    ),
-    "RISK_REVIEW": (
-        "Internal review item -- do not lead a client conversation with this. Raise with Credit "
-        "Risk first."
-    ),
-    "ADVISORY_ONLY": (
-        "No specific product to lead with. A general relationship check-in is appropriate."
-    ),
-}
-
-WHY_NOW = {
-    "cash_buildup": "Balance has been climbing steadily -- the window to place it closes when it moves.",
-    "dormancy": "Account has gone quiet; relationships fade before they formally end.",
-    "revenue_pattern_change": "Incoming payment pattern has structurally shifted -- financing need changes with it.",
-    "facility_utilization_spike": "Drawn close to the limit -- headroom becomes a constraint before it becomes a request.",
-    "facility_maturity_approaching": "Facility matures soon; renewal conversations go better before the deadline, not after.",
-    "fixed_rate_expiry": "Fixed rate ends shortly -- the client rolls onto a different rate by default if nobody calls.",
-    "collateral_coverage_drop": "Collateral cover has fallen below requirement -- a credit review matter, not a sales one.",
-}
+# R2: the per-category revenue mechanism / talking point and the per-signal
+# "why now" line moved to config -- config/categories.yaml and
+# config/domains_*.yaml, read via datainsights/category_registry.py and
+# datainsights/domain_registry.py. Never Python dicts again.
 
 
 @dataclass(frozen=True)
@@ -101,7 +58,6 @@ class RevenueModel:
     financing_assumed_term_months: int
     treasury_spread_pct: float
     hedging_fee_pct: float
-    no_revenue_categories: tuple[str, ...]
 
     @classmethod
     def from_rules_dict(cls, rules: dict) -> "RevenueModel":
@@ -112,7 +68,6 @@ class RevenueModel:
             financing_assumed_term_months=d["financing_assumed_term_months"],
             treasury_spread_pct=d["treasury_spread_pct"],
             hedging_fee_pct=d["hedging_fee_pct"],
-            no_revenue_categories=tuple(d["no_revenue_categories"]),
         )
 
 
@@ -121,18 +76,22 @@ def indicative_revenue_eur(category: str, offer_amount_eur: float | None,
     """Indicative first-cycle revenue to the bank, or None where sizing a
     revenue number would be the wrong behaviour (RISK_REVIEW,
     ADVISORY_ONLY) or where no offer amount could be honestly grounded."""
-    if category in model.no_revenue_categories:
+    # R2: the formula is chosen by the category's `revenue_model` in
+    # config/categories.yaml, not by a category-name branch here -- a new
+    # revenue category earns revenue with a YAML edit, no Python.
+    kind = category_registry.revenue_model(category)
+    if kind == "none":
         return None
     if not offer_amount_eur or offer_amount_eur <= 0:
         return None
-    if category in ("FINANCING_NEED", "CAPEX_FINANCING"):
+    if kind == "financing":
         term_fraction = model.financing_assumed_term_months / 12
         margin = offer_amount_eur * model.financing_nim_pct * term_fraction
         fee = offer_amount_eur * model.financing_arrangement_fee_pct
         return round(margin + fee, 2)
-    if category == "TREASURY_OPPORTUNITY":
+    if kind == "treasury":
         return round(offer_amount_eur * model.treasury_spread_pct, 2)
-    if category == "HEDGING_NEED":
+    if kind == "hedging":
         return round(offer_amount_eur * model.hedging_fee_pct, 2)
     return None
 
@@ -144,28 +103,37 @@ def _offer_amount_from_recommendation(rec: Recommendation) -> float | None:
     return rec.sized_offer_eur
 
 
-def _client_context(source: FdmLocalSource, as_of: date) -> pd.DataFrame:
+def _client_context(canonical: CanonicalSource, as_of: date) -> pd.DataFrame:
     """Segment/sector/country per party -- who the RM is actually calling.
-    Read through the DataSource interface, never a file path, so this
-    works unchanged against a Snowflake-backed FDM source."""
-    party = source.party(as_of)[["PRTY_ID", "PRTY_SGMNT_CD"]]
-    demo = source.party_demographic()[["PRTY_ID", "SECTOR_NM"]]
-    loc = source.party_locator()[["PRTY_ID", "COUNTRY_CD"]]
-    return party.merge(demo, on="PRTY_ID", how="left").merge(loc, on="PRTY_ID", how="left")
+    Read through CanonicalSource, so this works unchanged against any
+    bound schema (docs/generalization_plan.md Phase 1) -- a binding that
+    doesn't provide sector/country (e.g. legacy, see
+    config/bindings/legacy.yaml) simply leaves those columns absent;
+    callers below degrade to an empty string, never a crash."""
+    party = canonical.read("Party", as_at=as_of)
+    if party.empty:
+        return pd.DataFrame(columns=["party_id", "segment", "sector_name", "country_code",
+                                     "relationship_manager_id"])
+    for col in ("segment", "sector_name", "country_code", "relationship_manager_id"):
+        if col not in party.columns:
+            party[col] = ""
+    return party[["party_id", "segment", "sector_name", "country_code", "relationship_manager_id"]]
 
 
-def build_rm_worklist(recommendations: list[Recommendation], source: FdmLocalSource,
-                       rules: dict, as_of: date) -> pd.DataFrame:
+def build_rm_worklist(recommendations: list[Recommendation], source, rules: dict, as_of: date,
+                       binding_name: str = "fdm") -> pd.DataFrame:
     """One scannable row per recommendation, ranked by indicative revenue
     where one exists, then by signal strength -- so the RM's first rows
     are the ones most worth their next hour. Non-revenue categories
     (RISK_REVIEW, ADVISORY_ONLY) always sort last: they matter, but they
-    are not what an RM opens the list to action."""
+    are not what an RM opens the list to action. `source` is any
+    DataSource matching a config/bindings/<binding_name>.yaml binding."""
     if not recommendations:
         return pd.DataFrame(columns=RM_WORKLIST_COLUMNS)
 
     model = RevenueModel.from_rules_dict(rules)
-    context = _client_context(source, as_of).set_index("PRTY_ID")
+    canonical = CanonicalSource(source, load_binding(binding_name))
+    context = _client_context(canonical, as_of).set_index("party_id")
 
     rows = []
     for rec in recommendations:
@@ -174,17 +142,19 @@ def build_rm_worklist(recommendations: list[Recommendation], source: FdmLocalSou
         ctx = context.loc[rec.prty_id] if rec.prty_id in context.index else None
         rows.append({
             "prty_id": rec.prty_id,
-            "segment": ctx["PRTY_SGMNT_CD"] if ctx is not None else "",
-            "sector": ctx["SECTOR_NM"] if ctx is not None else "",
-            "country": ctx["COUNTRY_CD"] if ctx is not None else "",
+            "relationship_manager_id": ctx["relationship_manager_id"] if ctx is not None else "",
+            "segment": ctx["segment"] if ctx is not None else "",
+            "sector": ctx["sector_name"] if ctx is not None else "",
+            "country": ctx["country_code"] if ctx is not None else "",
             "nba_category": rec.nba_category,
-            "revenue_mechanism": REVENUE_MECHANISM.get(rec.nba_category, ""),
+            "revenue_mechanism": category_registry.revenue_mechanism(rec.nba_category),
             "indicative_revenue_eur": revenue,
             "indicative_offer_eur": offer,
-            "why_now": WHY_NOW.get(rec.endogenous_signal_type, ""),
+            "currency": rec.currency,
+            "why_now": domain_registry.why_now_for(rec.endogenous_signal_type),
             "hypothesis": rec.hypothesis,
             "recommended_action": rec.recommended_action,
-            "talking_point": TALKING_POINT.get(rec.nba_category, ""),
+            "talking_point": category_registry.talking_point(rec.nba_category),
             "confirming_domains": ",".join(rec.confirming_domains),
             "signal_strength": rec.signal_strength,
             "endogenous_signal_type": rec.endogenous_signal_type,
@@ -200,7 +170,7 @@ def build_rm_worklist(recommendations: list[Recommendation], source: FdmLocalSou
 
     df = pd.DataFrame(rows)
     df["_revenue_sort"] = df["indicative_revenue_eur"].fillna(-1)
-    df["_is_revenue_category"] = ~df["nba_category"].isin(model.no_revenue_categories)
+    df["_is_revenue_category"] = df["nba_category"].map(category_registry.is_revenue)
     df = df.sort_values(
         ["_is_revenue_category", "_revenue_sort", "signal_strength"],
         ascending=[False, False, False],
@@ -220,7 +190,10 @@ def write_rm_digest(df: pd.DataFrame, out_path: str, as_of: date, run_notes: str
     clients closely, where the CSV is for triaging the whole book."""
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     revenue_rows = df[df["indicative_revenue_eur"].notna()]
-    total_indicative = revenue_rows["indicative_revenue_eur"].sum()
+    # R17: totals per currency -- never summed across currencies
+    by_cur = revenue_rows.groupby("currency")["indicative_revenue_eur"].sum() if "currency" in df.columns \
+        else {"EUR": revenue_rows["indicative_revenue_eur"].sum()}
+    totals_text = ", ".join(f"~{c} {v:,.0f}" for c, v in dict(by_cur).items()) or "~EUR 0"
 
     lines = [
         "# RM worklist — FDM pipeline",
@@ -234,14 +207,14 @@ def write_rm_digest(df: pd.DataFrame, out_path: str, as_of: date, run_notes: str
         "",
         f"{len(df)} recommendation(s). "
         f"{len(revenue_rows)} carry an indicative revenue figure, totalling "
-        f"~EUR {total_indicative:,.0f} (illustrative).",
+        f"{totals_text} (illustrative).",
         "",
     ]
     if run_notes:
         lines += [run_notes, ""]
 
     for _, row in df.iterrows():
-        revenue = (f"~EUR {row['indicative_revenue_eur']:,.0f} (illustrative)"
+        revenue = (f"~{row.get('currency', 'EUR')} {row['indicative_revenue_eur']:,.0f} (illustrative)"
                     if pd.notna(row["indicative_revenue_eur"]) else "none — not a revenue signal")
         lines += [
             f"## #{row['rank']} — {row['prty_id']} — {row['nba_category']}",

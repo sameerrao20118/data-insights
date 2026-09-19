@@ -5,7 +5,7 @@ as-at/history test below is the one that matters most: it must fail if
 the detector were changed to look at only the latest row.
 """
 
-from datetime import date, timedelta
+from datetime import date
 
 import pandas as pd
 import pytest
@@ -16,9 +16,9 @@ CFG = DetectorConfig(coverage_threshold_pct=1.0, cooldown_days=30, rule_version=
 
 
 def cov(agrmnt_id, cltrl_item_id, prty_id, eff_start: date, orig_lim, cltrl_val):
-    return {"PRTY_ID": prty_id, "AGRMNT_ID": agrmnt_id, "CLTRL_ITEM_ID": cltrl_item_id,
-            "AGRMNT_ORIG_LIM": orig_lim, "CLTRL_VAL_AMT": cltrl_val,
-            "EFFECTIVE_START_DT": eff_start.isoformat()}
+    return {"party_id": prty_id, "account_id": agrmnt_id, "collateral_id": cltrl_item_id,
+            "original_limit": orig_lim, "value": cltrl_val,
+            "valid_from": eff_start.isoformat()}
 
 
 def test_genuine_drop_detected():

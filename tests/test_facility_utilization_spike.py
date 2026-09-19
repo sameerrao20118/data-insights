@@ -11,8 +11,8 @@ CFG = DetectorConfig(utilization_threshold_pct=0.85, cooldown_days=30, rule_vers
 
 
 def bal(agrmnt_id, prty_id, d: date, drawn, limit):
-    return {"PRTY_ID": prty_id, "AGRMNT_ID": agrmnt_id, "AGRMNT_DLY_BAL_STRT_DTTM": d.isoformat(),
-            "AGRMNT_LDGR_BAL_AMT": drawn, "AGRMNT_ORIG_LIM": limit}
+    return {"party_id": prty_id, "account_id": agrmnt_id, "observed_at": d.isoformat(),
+            "balance": drawn, "original_limit": limit}
 
 
 def test_above_threshold_detected():

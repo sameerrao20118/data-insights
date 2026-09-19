@@ -10,9 +10,19 @@
 # entities/columns onto these concepts. Adding a schema means writing a
 # binding, never editing this file, unless the new schema needs a
 # concept genuinely nothing here has yet.
+#
+# R4 (docs/refactor_plan.md): this file IS the registry -- loaded by
+# datainsights/semantic/binding.py::load_semantic_model() and consumed by
+# the onboarding proposer (no Python copy of the concept list exists any
+# more). `kind:` is one of entity | observation | event | version |
+# valuation, and config/packs/<pack>.yaml groups concepts + detectors +
+# categories into a domain pack. A schema whose tables map onto no
+# concept here gets a PROPOSED concept for review
+# (onboarding/concept_proposer.py), never a silent 'unavailable'.
 
 concepts:
   Party:
+    kind: entity
     key: party_id
     bitemporal: optional
     fields:
@@ -22,8 +32,10 @@ concepts:
       sector_name: {type: string, required: false}
       country_code: {type: string, required: false}
       high_risk_flag: {type: bool, required: false}
+      relationship_manager_id: {type: string, required: false}
 
   Account:
+    kind: entity
     key: account_id
     bitemporal: optional
     fields:
@@ -37,6 +49,7 @@ concepts:
       currency: {type: string, required: false}
 
   BalanceObservation:
+    kind: observation
     key: [account_id, observed_at]
     bitemporal: false
     fields:
@@ -45,6 +58,7 @@ concepts:
       balance: {type: float, required: true}
 
   Transaction:
+    kind: event
     key: transaction_id
     bitemporal: false
     fields:
@@ -56,6 +70,7 @@ concepts:
       currency: {type: string, required: false}
 
   RiskGradeVersion:
+    kind: version
     key: party_id
     bitemporal: true
     fields:
@@ -66,6 +81,7 @@ concepts:
       grade_value: {type: int, required: true}
 
   PartyMetricVersion:
+    kind: version
     key: party_id
     bitemporal: true
     fields:
@@ -76,6 +92,7 @@ concepts:
       value: {type: float, required: true}
 
   CollateralValuation:
+    kind: valuation
     key: [collateral_id, valued_at]
     bitemporal: true
     fields:

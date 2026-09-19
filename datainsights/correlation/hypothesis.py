@@ -10,26 +10,31 @@ rules, implemented verbatim:
 Produces a Recommendation carrying exactly the insight_attributes keys
 from docs/decision_record.md Tab 4 (the MIMO insight record shape).
 
-Reuses this repo's EXISTING category/hypothesis/sizing conventions from
-datainsights/worklist.py rather than reinventing them -- categorize_macro_event,
-macro_hypothesis, and the TENDER_ADVANCE_PCT sizing constant are imported,
-not duplicated. This module's own job is the NEW part: combining multiple
-domain signals for one client into one ranked, sized recommendation,
-which nothing in worklist.py does today (it maps one detection at a
-time).
+An exogenous event's hypothesis override and sizing behaviour come from
+config/event_types.yaml's `correlation` block (via external_events/
+event_registry.py, docs/generalization_plan.md Phase 2) -- this module
+has no per-event-type branch; adding a new event type that confirms a
+recommendation is a YAML edit there, not a change here.
+
+This module's own job is the NEW part beyond a single detection: combining
+multiple domain signals (and, now, a matched exogenous event) for one
+client into one ranked, sized recommendation.
 """
 
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
+from datainsights import category_registry as _category_registry
 from datainsights.domain_registry import category_for as _category_for
+from datainsights.domain_registry import matching_combination as _matching_combination
+from datainsights.domain_registry import non_revenue_action_for as _non_revenue_action_for
 from datainsights.domain_registry import hypothesis_for as _hypothesis_for
 from datainsights.domain_registry import is_ambiguous as _is_ambiguous
-from datainsights.worklist import TENDER_ADVANCE_PCT
 from detection_engine.signal import Signal
+from external_events import event_registry
 
 # Endogenous signal_type -> NBA category, and -> the general reasoning
 # sentence, now live in config/domains_fdm.yaml (one block per domain),
@@ -38,7 +43,11 @@ from detection_engine.signal import Signal
 # docs/adding_a_new_domain.md is the checklist for adding a signal_type's
 # mapping there.
 
-REVENUE_CATEGORIES = {"FINANCING_NEED", "TREASURY_OPPORTUNITY", "HEDGING_NEED", "CAPEX_FINANCING"}
+# R2: "is this a revenue category?" is answered by config/categories.yaml
+# (revenue_model != none) at call time -- never a literal set, and never
+# frozen at import, so a category added in YAML is live without a restart.
+def _is_revenue(category: str) -> bool:
+    return _category_registry.is_revenue(category)
 
 
 @dataclass(frozen=True)
@@ -83,6 +92,21 @@ class Recommendation:
     # may PROPOSE a refinement (a separate, unconfirmed field elsewhere),
     # never change this one itself.
     ambiguous: bool = False
+    # R17: the currency every amount on this recommendation is in -- the
+    # strongest signal's account currency (or the event's, when an exogenous
+    # event sized the offer). Never assumed EUR.
+    currency: str = "EUR"
+    # R10: the name of the cross-domain rule (config/domains_*.yaml
+    # `combinations:`) that set this category, or None when the strongest
+    # single signal did -- so the Trace tab can show WHY two signals
+    # together meant something one alone did not.
+    combination_rule: str | None = None
+    # R9: the Tier-2 investigator's proposal, attached by
+    # agents/orchestrator.evaluate_client when narrating an ambiguous or
+    # multi-domain recommendation. A PROPOSAL only -- nba_category above
+    # is never changed by it. Keys: proposed_category, status, reasoning,
+    # evidence_refs, could_not_determine, narrative_source.
+    investigation: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -92,6 +116,11 @@ class EndogenousSizing:
     dict should use from_rules_dict so review-time edits take effect."""
     target_utilization_pct: float = 0.70
     min_offer_eur: float = 10_000
+    # R17: per-currency floors; a currency not listed uses min_offer_eur.
+    min_offer_by_currency: dict = field(default_factory=dict)
+
+    def min_offer(self, currency: str) -> float:
+        return float(self.min_offer_by_currency.get(str(currency).upper(), self.min_offer_eur))
 
     @classmethod
     def from_rules_dict(cls, rules: dict) -> "EndogenousSizing":
@@ -99,6 +128,7 @@ class EndogenousSizing:
         return cls(
             target_utilization_pct=d.get("target_utilization_pct", cls.target_utilization_pct),
             min_offer_eur=d.get("min_offer_eur", cls.min_offer_eur),
+            min_offer_by_currency=d.get("min_offer_by_currency") or {},
         )
 
 
@@ -120,20 +150,12 @@ UNSIZED_ACTION = {
                           "-- no offer sized without the outstanding balance.",
 }
 
-# Action for categories that never carry an offer.
-NON_REVENUE_ACTION = {
-    "collateral_coverage_drop": "Refer to Credit Risk for a collateral adequacy review -- "
-                                 "internal action, not a client sales conversation.",
-    "dormancy": "RM to make a relationship check-in on the inactive account -- no product offer.",
-}
-# A revenue signal whose category was suppressed (rule 1). Deliberately
-# generic: the reason must never be surfaced in text -- see assemble()'s
-# docstring on HIGH_RSK_CUST_IND.
-SUPPRESSED_ACTION = "RM to review before any product conversation -- no offer sized for this recommendation."
+# R2: non-revenue action text lives per signal in config/domains_*.yaml;
+# the suppressed-category action lives in config/categories.yaml.
 
 
-def _eur(value: float) -> str:
-    return f"EUR {float(value):,.0f}"
+def _money(value: float, currency: str = "EUR") -> str:
+    return f"{str(currency).upper()} {float(value):,.0f}"
 
 
 def _size_endogenous(signal: Signal, sizing: EndogenousSizing) -> tuple[float | None, str, str]:
@@ -142,27 +164,35 @@ def _size_endogenous(signal: Signal, sizing: EndogenousSizing) -> tuple[float | 
     action. Any missing/malformed figure yields unsized, never a guess."""
     m = signal.raw_measure or {}
     kind = signal.signal_type
+    cur = str(m.get("currency", "EUR")).upper()
+    floor = sizing.min_offer(cur)
     try:
         if kind == "cash_buildup":
             surplus = float(m["current_balance"]) - float(m["prior_balance"])
-            if surplus >= sizing.min_offer_eur:
+            if surplus >= floor:
                 return (round(surplus, 2), "balance_buildup_amount_illustrative",
-                        f"Offer a deposit or short-term investment placement for ~{_eur(surplus)} "
+                        f"Offer a deposit or short-term investment placement for ~{_money(surplus, cur)} "
                         f"(the balance build-up over the review window, illustrative).")
+        elif kind == "large_incoming_payment":
+            surplus = float(m["flagged_amount"]) - float(m["baseline_median"])
+            if surplus >= floor:
+                return (round(surplus, 2), "payment_above_own_baseline_illustrative",
+                        f"Offer a short-term deposit or investment placement for ~{_money(surplus, cur)} "
+                        f"(the payment above this client's own baseline, illustrative).")
         elif kind == "facility_utilization_spike":
             drawn, limit = float(m["drawn_amount"]), float(m["orig_limit"])
             increase = drawn / sizing.target_utilization_pct - limit
-            if limit > 0 and increase >= sizing.min_offer_eur:
+            if limit > 0 and increase >= floor:
                 return (round(increase, 2),
                         f"limit_increase_to_{round(sizing.target_utilization_pct * 100)}pct_utilization_illustrative",
-                        f"Offer a facility limit increase of ~{_eur(increase)} to bring utilisation back "
+                        f"Offer a facility limit increase of ~{_money(increase, cur)} to bring utilisation back "
                         f"to {sizing.target_utilization_pct:.0%} (currently {drawn / limit:.0%} of "
-                        f"{_eur(limit)}, illustrative).")
+                        f"{_money(limit, cur)}, illustrative).")
         elif kind == "facility_maturity_approaching":
             limit = float(m["orig_limit"])
-            if limit >= sizing.min_offer_eur:
+            if limit >= floor:
                 return (round(limit, 2), "renewal_at_current_limit_illustrative",
-                        f"Offer renewal of the {_eur(limit)} facility before it matures on "
+                        f"Offer renewal of the {_money(limit, cur)} facility before it matures on "
                         f"{m.get('close_date')} (in {m.get('days_to_close')} days), using the current "
                         f"limit as the starting point (illustrative).")
     except (KeyError, TypeError, ValueError, ZeroDivisionError):
@@ -215,12 +245,27 @@ def assemble(
 
     strongest = max(signals, key=lambda s: s.magnitude)
     category = _category_for(strongest.signal_type)
+    hypothesis = _hypothesis_for(strongest.signal_type)
+    sizing_signal = strongest
+
+    # R10: a cross-domain rule (config/domains_*.yaml `combinations:`)
+    # consulted BEFORE strongest-signal-wins -- two signals together can
+    # mean something one alone does not. No matching rule: unchanged.
+    combination = _matching_combination({s.signal_type for s in signals})
+    combination_rule = None
+    if combination is not None:
+        combination_rule = combination.name
+        category = combination.category
+        hypothesis = combination.hypothesis
+        if combination.size_from:
+            sizing_signal = next((s for s in signals if s.signal_type == combination.size_from), strongest)
+    natural_category = category  # what the evidence says, before governance
 
     # Rule 1: RISK_REVIEW / high-risk flag suppresses revenue categories.
-    if high_risk_flag and category in REVENUE_CATEGORIES:
+    if high_risk_flag and _is_revenue(category):
         category = "ADVISORY_ONLY"
     if any(_category_for(s.signal_type, default=None) == "RISK_REVIEW" for s in signals) \
-            and category in REVENUE_CATEGORIES:
+            and _is_revenue(category):
         category = "ADVISORY_ONLY"
 
     confirming_domains = tuple(sorted({s.domain for s in signals}))
@@ -232,39 +277,45 @@ def assemble(
     if strength == 0:
         return None
 
-    hypothesis = _hypothesis_for(strongest.signal_type)
-    if exogenous_confirmed and exogenous_event_type == "public_tender_award":
-        hypothesis = ("Winning a public tender creates a cash-flow gap between delivery and "
-                      "payment, confirmed here by the client's own recent revenue growth -- "
-                      "working capital sized to the contract is timely before delivery starts.")
+    exogenous_correlation = None
+    if exogenous_confirmed:
+        exogenous_correlation = (event_registry.spec(exogenous_event_type).correlation or None)
+        if exogenous_correlation and exogenous_correlation.get("hypothesis"):
+            hypothesis = exogenous_correlation["hypothesis"]
 
-    # Sizing: reuse the existing tender-value heuristic (worklist.py) when
-    # an exogenous event with a real value confirms this signal. Otherwise
-    # this pass has no revenue figure on FDM PARTY to size a %-of-revenue
-    # offer against (that field lives only in the legacy schema) -- state
-    # that honestly rather than inventing a number.
+    # Sizing: an exogenous event's own correlation.sizing block (config/
+    # event_types.yaml) decides how a confirmed revenue-category signal
+    # gets sized -- e.g. public_tender_award's pct_of_event_value. A type
+    # with no usable sizing here (missing event value, or a
+    # `not_sized_this_pass` basis, e.g. fx_rate_move) falls through to the
+    # same endogenous sizing an unconfirmed signal would get: this pass
+    # has no revenue figure on FDM PARTY to size a %-of-revenue offer
+    # against for every case (that field lives only in the legacy
+    # schema) -- state that honestly rather than inventing a number.
     sizing = sizing or EndogenousSizing()
-    natural_category = _category_for(strongest.signal_type)
     sized_offer_eur = None
-    if category in REVENUE_CATEGORIES and exogenous_confirmed and exogenous_event_value_eur:
+    currency = str((sizing_signal.raw_measure or {}).get("currency")
+                   or next((s.raw_measure.get("currency") for s in signals if (s.raw_measure or {}).get("currency")), "EUR")).upper()
+    registry_sizing = (exogenous_correlation or {}).get("sizing") if exogenous_correlation else None
+    if (_is_revenue(category) and exogenous_confirmed and exogenous_event_value_eur
+            and registry_sizing and registry_sizing.get("basis") == "pct_of_event_value"):
         # Only a revenue category gets an offer -- a suppressed client must
         # never be offered financing just because an event matched.
-        sized_offer_eur = round(exogenous_event_value_eur * TENDER_ADVANCE_PCT, 2)
-        sizing_basis = f"{int(TENDER_ADVANCE_PCT * 100)}pct_of_event_value_illustrative"
-        recommended_action = (
-            f"Offer working-capital financing of ~EUR {sized_offer_eur:,.0f} "
-            f"({int(TENDER_ADVANCE_PCT * 100)}% of the EUR {exogenous_event_value_eur:,.0f} "
-            f"tender value, illustrative) to bridge delivery before payment."
+        pct = registry_sizing["pct"]
+        sized_offer_eur = round(exogenous_event_value_eur * pct, 2)
+        currency = "EUR"  # the event value is EUR-denominated (event_types.yaml); disclosed, not assumed
+        sizing_basis = f"{int(pct * 100)}pct_of_event_value_illustrative"
+        recommended_action = registry_sizing["action_template"].format(
+            sized_offer_eur=sized_offer_eur, pct_int=int(pct * 100), event_value=exogenous_event_value_eur,
         )
-    elif category in REVENUE_CATEGORIES:
-        sized_offer_eur, sizing_basis, recommended_action = _size_endogenous(strongest, sizing)
-    elif natural_category in REVENUE_CATEGORIES:
+    elif _is_revenue(category):
+        sized_offer_eur, sizing_basis, recommended_action = _size_endogenous(sizing_signal, sizing)
+    elif _is_revenue(natural_category):
         sizing_basis = "not_sized_suppressed_category"
-        recommended_action = SUPPRESSED_ACTION
+        recommended_action = _category_registry.suppressed_action()
     else:
         sizing_basis = "not_sized_non_revenue_category"
-        recommended_action = NON_REVENUE_ACTION.get(
-            strongest.signal_type, "RM to review this signal -- no product offer.")
+        recommended_action = _non_revenue_action_for(strongest.signal_type)
 
     crm_text = (f"{strongest.signal_type.replace('_', ' ').title()} observed. "
                 f"{recommended_action}")[:200]  # Tab 4's hard 200-char limit
@@ -299,4 +350,6 @@ def assemble(
         recommendation_id=recommendation_id,
         baseline_source=(strongest.raw_measure or {}).get("baseline", "deterministic"),
         ambiguous=_is_ambiguous(strongest.signal_type),
+        combination_rule=combination_rule,
+        currency=currency,
     )

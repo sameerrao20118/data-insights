@@ -10,8 +10,6 @@ import pytest
 
 from datainsights.correlation.hypothesis import Recommendation
 from datainsights.sinks.mimo_placeholder import (
-    MAX_CRM_TEXT_CHARS,
-    MAX_USER_STORY_ID_CHARS,
     MimoPlaceholderError,
     build_insight_attributes,
     build_mimo_insight_record,

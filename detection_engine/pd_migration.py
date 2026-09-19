@@ -28,7 +28,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
-REQUIRED_COLUMNS = ["PRTY_ID", "EFFECTIVE_START_DT", "EFFECTIVE_END_DT", "PRTY_MTR_TYP_CD", "PRTY_MTR_VAL"]
+REQUIRED_COLUMNS = ["party_id", "valid_from", "valid_to", "metric_type", "value"]
 
 
 @dataclass(frozen=True)
@@ -61,33 +61,33 @@ DETECTION_COLUMNS = [
 
 
 def _value_at(series: pd.DataFrame, when: pd.Timestamp) -> pd.Series | None:
-    end = series["EFFECTIVE_END_DT"]
-    valid = series[(series["EFFECTIVE_START_DT"] <= when) & (end.isna() | (end > when))]
+    end = series["valid_to"]
+    valid = series[(series["valid_from"] <= when) & (end.isna() | (end > when))]
     if valid.empty:
         return None
-    return valid.sort_values("EFFECTIVE_START_DT").iloc[-1]
+    return valid.sort_values("valid_from").iloc[-1]
 
 
 def detect(metrics: pd.DataFrame, config: DetectorConfig, run_id: str, as_of: date) -> pd.DataFrame:
     missing = [c for c in REQUIRED_COLUMNS if c not in metrics.columns]
     if missing:
         raise ValueError(f"pd_migration.detect missing required columns: {missing}")
-    pd_rows = metrics[metrics["PRTY_MTR_TYP_CD"] == config.metric_type].copy()
+    pd_rows = metrics[metrics["metric_type"] == config.metric_type].copy()
     if pd_rows.empty:
         return pd.DataFrame(columns=DETECTION_COLUMNS)
 
-    pd_rows["EFFECTIVE_START_DT"] = pd.to_datetime(pd_rows["EFFECTIVE_START_DT"])
-    pd_rows["EFFECTIVE_END_DT"] = pd.to_datetime(pd_rows["EFFECTIVE_END_DT"].replace("", pd.NA), errors="coerce")
+    pd_rows["valid_from"] = pd.to_datetime(pd_rows["valid_from"])
+    pd_rows["valid_to"] = pd.to_datetime(pd_rows["valid_to"].replace("", pd.NA), errors="coerce")
     now_ts, prior_ts = pd.Timestamp(as_of), pd.Timestamp(as_of - timedelta(days=config.lookback_days))
     stamp = datetime.now(timezone.utc).isoformat()
 
     out_rows = []
-    for prty_id, series in pd_rows.groupby("PRTY_ID", sort=False):
-        series = series[series["EFFECTIVE_START_DT"] <= now_ts]  # no future versions
+    for prty_id, series in pd_rows.groupby("party_id", sort=False):
+        series = series[series["valid_from"] <= now_ts]  # no future versions
         current, prior = _value_at(series, now_ts), _value_at(series, prior_ts)
         if current is None or prior is None:
             continue
-        cur_pd, prior_pd = float(current["PRTY_MTR_VAL"]), float(prior["PRTY_MTR_VAL"])
+        cur_pd, prior_pd = float(current["value"]), float(prior["value"])
         if prior_pd <= 0:
             continue  # relative change undefined -- not evaluable, not "infinite migration"
         abs_change = cur_pd - prior_pd
@@ -98,7 +98,7 @@ def detect(metrics: pd.DataFrame, config: DetectorConfig, run_id: str, as_of: da
         if direction == "decrease" and not config.emit_improvements:
             continue
         out_rows.append({
-            "detection_id": f"{config.rule_version}:pd_migration:{prty_id}:{current['EFFECTIVE_START_DT'].date().isoformat()}",
+            "detection_id": f"{config.rule_version}:pd_migration:{prty_id}:{current['valid_from'].date().isoformat()}",
             "rule_version": config.rule_version,
             "prty_id": prty_id,
             "event_date": as_of.isoformat(),
@@ -107,7 +107,7 @@ def detect(metrics: pd.DataFrame, config: DetectorConfig, run_id: str, as_of: da
             "current_pd_pct": round(cur_pd, 6),
             "change_pct": round(rel_change, 4),
             "direction": direction,
-            "pd_effective_date": current["EFFECTIVE_START_DT"].date().isoformat(),
+            "pd_effective_date": current["valid_from"].date().isoformat(),
             "status": "detected",
         })
     return pd.DataFrame(out_rows, columns=DETECTION_COLUMNS)

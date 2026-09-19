@@ -11,8 +11,8 @@ CFG = DetectorConfig(horizon_days=90, cooldown_days=30, rule_version="test.v1")
 
 
 def agr(agrmnt_id, prty_id, close_dt):
-    return {"PRTY_ID": prty_id, "AGRMNT_ID": agrmnt_id,
-            "AGRMNT_CLOSE_DT": close_dt.isoformat() if close_dt else ""}
+    return {"party_id": prty_id, "account_id": agrmnt_id,
+            "close_date": close_dt.isoformat() if close_dt else ""}
 
 
 def test_within_horizon_detected():
@@ -59,7 +59,7 @@ def test_orig_limit_carried_when_present_and_none_when_absent():
     """Carried so a renewal can be sized at the current limit; optional so
     callers without a limit column keep working."""
     as_of = date(2024, 1, 1)
-    with_limit = pd.DataFrame([{**agr("A1", "P1", as_of + timedelta(days=30)), "AGRMNT_ORIG_LIM": 250_000.0}])
+    with_limit = pd.DataFrame([{**agr("A1", "P1", as_of + timedelta(days=30)), "original_limit": 250_000.0}])
     assert detect(with_limit, CFG, "run1", as_of).iloc[0]["orig_limit"] == 250_000.0
     without = detect(pd.DataFrame([agr("A1", "P1", as_of + timedelta(days=30))]), CFG, "run1", as_of)
     assert without.iloc[0]["orig_limit"] is None

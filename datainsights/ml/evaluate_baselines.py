@@ -32,6 +32,8 @@ from __future__ import annotations
 
 import os
 import random
+
+import pandas as pd
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -72,19 +74,25 @@ def _is_flagged(value: float, median: float, mad: float) -> bool:
     return value > median + MAD_MULTIPLIER * tolerance
 
 
-def load_credit_histories(source, as_of: date) -> dict[str, list[tuple[date, float]]]:
-    """Per deposit agreement: its credit-transaction amounts over time.
-    Read through the DataSource interface -- works unchanged against a
-    Snowflake-backed FDM source."""
-    events = source.financial_event(as_of - timedelta(days=365 * 3), as_of)
-    credits = events[events["FIN_EVNT_SBTYP_CD"] == "CRD"]
+def load_credit_histories(source, as_of: date, binding_name: str = "fdm") -> dict[str, list[tuple[date, float]]]:
+    """Per deposit account: its credit-transaction amounts over time, read
+    through CanonicalSource (R1/R3) -- works unchanged against any bound
+    schema, Snowflake-backed or local."""
+    from datainsights.semantic.binding import load_binding
+    from datainsights.semantic.canonical import CanonicalSource
+
+    canonical = CanonicalSource(source, load_binding(binding_name))
+    events = canonical.read("Transaction")
+    ts = pd.to_datetime(events["posted_at"])
+    events = events[(ts >= pd.Timestamp(as_of - timedelta(days=365 * 3))) & (ts <= pd.Timestamp(as_of))]
+    credits = events[events["direction"] == "credit"]
     histories: dict[str, list[tuple[date, float]]] = {}
-    for agrmnt_id, grp in credits.groupby("AGRMNT_ID_TRN_ACCT"):
-        grp = grp.sort_values("FIN_EVNT_PSTD_DT")
+    for account_id, grp in credits.groupby("account_id"):
+        grp = grp.sort_values("posted_at")
         rows = [(d if isinstance(d, date) else date.fromisoformat(str(d)[:10]), float(a))
-                for d, a in zip(grp["FIN_EVNT_PSTD_DT"], grp["FIN_EVNT_AMT"])]
+                for d, a in zip(grp["posted_at"], grp["amount"])]
         if len(rows) >= MIN_HISTORY + 2:
-            histories[agrmnt_id] = rows
+            histories[account_id] = rows
     return histories
 
 
@@ -164,12 +172,12 @@ def verdict(results: list[dict]) -> str:
 
 
 def main():
-    from datainsights.sources.fdm_local import FdmLocalSource
+    from datainsights.runtime import build_runtime
 
     if not os.path.isdir(FDM_DIR):
         raise SystemExit("Generate FDM data first: python -m data_generator.fdm.generate_fdm")
 
-    source = FdmLocalSource(FDM_DIR, CONTRACT_PATH)
+    source = build_runtime("fdm_local").source
     histories = load_credit_histories(source, date(2026, 6, 30))
 
     print("=" * 86)

@@ -8,7 +8,7 @@ never on a specific backend's client library.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from typing import Optional
 
@@ -21,6 +21,13 @@ class SourceCapabilities:
     supports_bounded_time_window: bool
     supports_change_detection: bool  # false = full-table read only, no CDC
     read_only: bool = True
+    # T6 (docs/ml_strategy_plan.md §7/§9) -- true only for a source that
+    # also implements an `aggregate()` method computing a windowed
+    # per-entity aggregate server-side (SQL), so datainsights/features.py's
+    # compute_many() can push down instead of materialising a whole table
+    # into pandas. Default False: a source with no aggregate() method
+    # must never claim this.
+    supports_aggregate_pushdown: bool = False
 
 
 @dataclass(frozen=True)

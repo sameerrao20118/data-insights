@@ -76,7 +76,7 @@ def _ollama_reachable() -> bool:
 def test_live_copilot_answers_grounded_in_the_row():
     from agents.model_factory import ModelConfig, get_model
 
-    model = get_model(ModelConfig(mode="local", model_id="qwen2.5:7b"))
+    model = get_model(ModelConfig(mode="local"))
     answer = ask("Why is this recommendation sized the way it is?", ROW, model)
     print(f"\nCopilot answer ({answer.status}): {answer.answer}")
     assert answer.answer.strip()

@@ -33,7 +33,7 @@ def test_s3_parquet_backend_raises_not_implemented_not_silently_local():
         config_version=1, profile="test_s3",
         runtime=RuntimeConfig(target="local"),
         source=SourceConfig(backend="s3_parquet", entity_map_ref="config/entities_fdm.yaml",
-                            cost_policy="x", s3_uri="s3://bucket/prefix"),
+                            cost_policy="no_cost_until_deployed_not_run", s3_uri="s3://bucket/prefix"),
         analytics={"backend": "duckdb_local"},
         llm={"provider": "ollama", "base_url": "http://127.0.0.1:11434", "model": "qwen2.5:7b"},
         state=StateConfig(backend="sqlite", path="var/x.db"),
@@ -51,7 +51,7 @@ def test_glue_athena_backend_raises_not_implemented():
         config_version=1, profile="test_glue",
         runtime=RuntimeConfig(target="local"),
         source=SourceConfig(backend="glue_athena", entity_map_ref="config/entities_fdm.yaml",
-                            cost_policy="x", glue_database="db"),
+                            cost_policy="no_cost_until_deployed_not_run", glue_database="db"),
         analytics={"backend": "duckdb_local"},
         llm={"provider": "ollama", "base_url": "http://127.0.0.1:11434", "model": "qwen2.5:7b"},
         state=StateConfig(backend="sqlite", path="var/x.db"),
@@ -60,8 +60,12 @@ def test_glue_athena_backend_raises_not_implemented():
         cost={},
     )
     import datainsights.runtime as rtmod
-    with pytest.raises(NotImplementedError, match="glue_athena"):
-        rtmod._build_source(profile)
+    from datainsights.sources.sql_source import AthenaSource
+    src = rtmod._build_source(profile)  # R5: constructs lazily -- never connects
+    assert isinstance(src, AthenaSource)
+    from datetime import date
+    with pytest.raises(EnvironmentError, match="NOT RUN"):
+        src.read_entity("PARTY", start_date=date(2025, 1, 1), end_date=date(2025, 1, 2))
 
 
 def test_model_gateway_provider_validates_but_get_model_raises():
@@ -71,7 +75,7 @@ def test_model_gateway_provider_validates_but_get_model_raises():
         config_version=1, profile="test_gateway",
         runtime=RuntimeConfig(target="agentcore"),
         source=SourceConfig(backend="offline_local", entity_map_ref="config/entities_fdm.yaml",
-                            cost_policy="x", data_dir="data_generator/output_fdm"),
+                            cost_policy="no_cost_local_files", data_dir="data_generator/output_fdm"),
         analytics={"backend": "duckdb_local"},
         llm={"provider": "model_gateway", "model": "some-internal-model"},
         state=StateConfig(backend="sqlite", path="var/x.db"),
@@ -88,7 +92,7 @@ def _base_profile(**overrides) -> Profile:
     fields = dict(
         config_version=1, profile="test", runtime=RuntimeConfig(target="local"),
         source=SourceConfig(backend="offline_local", entity_map_ref="config/entities_fdm.yaml",
-                            cost_policy="x", data_dir="data_generator/output_fdm"),
+                            cost_policy="no_cost_local_files", data_dir="data_generator/output_fdm"),
         analytics={"backend": "duckdb_local"},
         llm={"provider": "ollama", "base_url": "http://127.0.0.1:11434", "model": "qwen2.5:7b"},
         state=StateConfig(backend="sqlite", path="var/x.db"),

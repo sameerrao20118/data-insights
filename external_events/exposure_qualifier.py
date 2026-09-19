@@ -12,32 +12,33 @@ qualification is the whole trick":
 a broadcast. Requiring demonstrable exposure from the client's own FDM
 data is what makes it a signal an RM can defend."
 
-Explicit documented functions, no ML -- matching the decision record's
-Slot E1-before-E2 ordering (explicit fn first, learnable challenger
-later).
-
-Simplification, disclosed: "capacity to deliver / existing WC headroom"
-for a tender award is approximated here as "this client's deposit account
-already shows a genuine revenue_pattern_change detection" (structural
-growth in incoming payments) rather than a real working-capital-ratio
-calculation, which is not modeled in this dataset. This is the one
-detector the decision record's own Agent Signal Map table pairs with a
-tender award ("Revenue pattern change ... Tender award (TED API) ...
-FINANCING_NEED ... Structural revenue growth" -- docs/fdm_reference.md).
-A real deployment would check actual working-capital ratios; this is an
-honest, disclosed placeholder for that, not a claim of doing real
-financial capacity analysis.
+docs/generalization_plan.md Phase 2 (R2): steps 1-3 above are no longer
+per-event-type Python branches. `qualifies()` reads
+config/event_types.yaml (via external_events/event_registry.py) for the
+event's `match` predicates (steps 1-2, generalized) and `exposure.all_of`
+composition (step 3, built from external_events/exposure_checks.py's
+named-check library). Adding a new event type -- like fx_rate_move, the
+second type proving this is genuinely declarative -- is a YAML edit, not
+a new function here.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 import pandas as pd
 
-from datainsights.sources.fdm_local import FdmLocalSource
-from detection_engine import revenue_pattern_change
+from datainsights.semantic.canonical import CanonicalSource
+from external_events import event_registry
+from external_events.event_registry import EventRegistryError
+from external_events.exposure_checks import CHECK_LIBRARY
+
+# Base ExogenousEvent CSV columns -- anything else in a events CSV row
+# becomes a payload field (load_events() below), so a new event type's
+# extra columns need no change here.
+_CORE_CSV_COLUMNS = {"event_id", "event_date", "event_type", "affected_country",
+                    "affected_sector", "severity", "estimated_value_eur"}
 
 
 @dataclass(frozen=True)
@@ -49,97 +50,123 @@ class ExogenousEvent:
     affected_sector: str
     severity: int
     estimated_value_eur: float
+    # Type-specific fields config/event_types.yaml's `payload:` block
+    # declares (e.g. fx_rate_move's currency_pair/currency/pct_change) --
+    # {} for a type with no payload fields (public_tender_award today).
+    payload: dict = field(default_factory=dict)
 
 
-def sector_match(prty_id: str, event: ExogenousEvent, source: FdmLocalSource) -> bool:
-    """Step 1. affected_sector is empty string == applies to all sectors,
-    matching the existing legacy external_macro_event.py convention for
-    a wildcard."""
-    if not event.affected_sector:
+def _resolve_field_ref(event: ExogenousEvent, ref):
+    """`ref` is a value from config/event_types.yaml: "payload.<key>" ->
+    event.payload[<key>]; a core ExogenousEvent attribute name ->
+    getattr(event, ref); anything else (an int, a literal string that
+    matches neither) is returned as-is -- a plain constant, not a
+    reference."""
+    if isinstance(ref, str) and ref.startswith("payload."):
+        return event.payload.get(ref[len("payload."):])
+    if isinstance(ref, str) and ref in _CORE_CSV_COLUMNS - {"event_id", "event_type"}:
+        return getattr(event, ref)
+    return ref
+
+
+def _eval_predicate(predicate: dict, event: ExogenousEvent, canonical: CanonicalSource, prty_id: str) -> bool:
+    party_field = predicate["field"]
+    is_membership = "in" in predicate
+    target = _resolve_field_ref(event, predicate["in"] if is_membership else predicate["equals"])
+    if predicate.get("wildcard_if_empty") and not target:
         return True
-    demo = source.party_demographic()
-    row = demo[demo["PRTY_ID"] == prty_id]
-    if row.empty:
+    party = canonical.read("Party", party_id=prty_id)
+    if party.empty or party_field not in party.columns:
         return False
-    return row.iloc[0]["NACE_SECTION_CD"] == event.affected_sector
+    party_value = party.iloc[0][party_field]
+    return (party_value in target) if is_membership else (party_value == target)
 
 
-def geography_match(prty_id: str, event: ExogenousEvent, source: FdmLocalSource) -> bool:
-    """Step 2. affected_country empty string == applies broadly."""
-    if not event.affected_country:
-        return True
-    loc = source.party_locator()
-    row = loc[loc["PRTY_ID"] == prty_id]
-    if row.empty:
-        return False
-    return row.iloc[0]["COUNTRY_CD"] == event.affected_country
+def sector_match(prty_id: str, event: ExogenousEvent, canonical: CanonicalSource) -> bool:
+    """Step 1, kept as a named function for callers that only care about
+    sector (tests, narrative code) -- now a lookup into this event
+    type's own `match` predicates rather than a hardcoded branch. A type
+    with no sector_code predicate (e.g. fx_rate_move) is vacuously true
+    here; its own registered predicates are still enforced by
+    qualifies()."""
+    predicate = next((p for p in event_registry.spec(event.event_type).match
+                      if p["field"] == "sector_code"), None)
+    return True if predicate is None else _eval_predicate(predicate, event, canonical, prty_id)
 
 
-def _tender_award_exposure(prty_id: str, source: FdmLocalSource, rules: dict, as_at: date) -> tuple[bool, float]:
-    """Step 3 for public_tender_award: does the client show a genuine
-    revenue_pattern_change signal (the disclosed capacity-to-deliver
-    proxy documented in this module's docstring)?"""
-    party_agreement, _ = source.read_entity("PARTY_AGREEMENT", allow_unbounded=True)
-    agreements = source.agreement(as_at)
-    dep_ids = agreements.loc[agreements["AGRMNT_TYP_CD"] == "DEP", "AGRMNT_ID"]
-    dep_ids_for_party = party_agreement.loc[
-        (party_agreement["PRTY_ID"] == prty_id) & (party_agreement["AGRMNT_ID"].isin(dep_ids)),
-        "AGRMNT_ID",
-    ]
-    if dep_ids_for_party.empty:
-        return False, 0.0
-
-    cfg = revenue_pattern_change.DetectorConfig.from_rules_dict(rules)
-    events = source.financial_event(as_at.replace(year=as_at.year - 1), as_at)
-    events = events[events["AGRMNT_ID_TRN_ACCT"].isin(dep_ids_for_party)].rename(
-        columns={"AGRMNT_ID_TRN_ACCT": "AGRMNT_ID"})
-    if events.empty:
-        return False, 0.0
-    events = events.copy()
-    events["PRTY_ID"] = prty_id
-    result = revenue_pattern_change.detect(events, cfg, "exposure_qualifier")
-    detected = result[result["status"] == "detected"]
-    if detected.empty:
-        return False, 0.0
-    magnitude = min(1.0, abs(float(detected.iloc[-1]["change_pct"])))
-    return True, magnitude
+def geography_match(prty_id: str, event: ExogenousEvent, canonical: CanonicalSource) -> bool:
+    """Step 2, same pattern as sector_match for country_code."""
+    predicate = next((p for p in event_registry.spec(event.event_type).match
+                      if p["field"] == "country_code"), None)
+    return True if predicate is None else _eval_predicate(predicate, event, canonical, prty_id)
 
 
-EXPOSURE_CHECKS = {
-    "public_tender_award": _tender_award_exposure,
-}
+def _resolve_check_kwargs(check_cfg: dict, event: ExogenousEvent) -> dict:
+    return {k: _resolve_field_ref(event, v) for k, v in check_cfg.items() if k != "check"}
 
 
-def qualifies(prty_id: str, event: ExogenousEvent, source: FdmLocalSource, rules: dict,
+def _compute_magnitude(magnitude_spec: dict, event: ExogenousEvent, facts: dict) -> float:
+    if "from_check" in magnitude_spec:
+        value = facts.get(magnitude_spec["from_check"], {}).get(magnitude_spec["field"], 0.0)
+    else:
+        value = event.payload.get(magnitude_spec["from_payload"], 0.0)
+    value = float(value or 0.0)
+    if magnitude_spec.get("abs"):
+        value = abs(value)
+    lo, hi = magnitude_spec.get("clamp", [0.0, 1.0])
+    return max(lo, min(hi, value))
+
+
+def qualifies(prty_id: str, event: ExogenousEvent, canonical: CanonicalSource, rules: dict,
               as_at: date) -> tuple[bool, float]:
-    """Full 3-step pipeline. Returns (qualifies, magnitude). A client
-    failing sector or geography match never reaches step 3 -- and a
-    client passing sector+geography but failing step 3 is exactly the
-    decision record's stated 'negative case': same sector/country, no
-    genuine exposure, must not qualify."""
-    if not sector_match(prty_id, event, source):
-        return False, 0.0
-    if not geography_match(prty_id, event, source):
-        return False, 0.0
-    check = EXPOSURE_CHECKS.get(event.event_type)
-    if check is None:
+    """Full pipeline for whichever event type `event.event_type` names:
+    every `match` predicate (steps 1-2) must pass, then every
+    `exposure.all_of` check (step 3) must pass, all read from
+    config/event_types.yaml. Returns (qualifies, magnitude). A client
+    failing any match predicate never reaches step 3 -- and a client
+    passing every match predicate but failing step 3 is exactly the
+    decision record's 'negative case': same sector/country (or whatever
+    this type matches on), no genuine exposure, must not qualify."""
+    try:
+        event_spec = event_registry.spec(event.event_type)
+    except EventRegistryError:
         raise NotImplementedError(
             f"No exposure check implemented for event_type={event.event_type!r}. "
-            f"Only 'public_tender_award' is in scope this pass -- see "
-            f"docs/decision_record.md Tab 6 Slot C ('open' status for the "
-            f"other five real exogenous sources)."
+            f"Registered types: {sorted(event_registry.known_event_types())} -- see "
+            f"config/event_types.yaml."
         )
-    return check(prty_id, source, rules, as_at)
+
+    for predicate in event_spec.match:
+        if not _eval_predicate(predicate, event, canonical, prty_id):
+            return False, 0.0
+
+    facts: dict[str, dict] = {}
+    for check_cfg in event_spec.exposure["all_of"]:
+        check_name = check_cfg["check"]
+        fn = CHECK_LIBRARY[check_name]
+        kwargs = _resolve_check_kwargs(check_cfg, event)
+        passed, check_facts = fn(canonical, prty_id, as_at, rules=rules, **kwargs)
+        if not passed:
+            return False, 0.0
+        facts[check_name] = check_facts
+
+    magnitude = _compute_magnitude(event_spec.exposure["magnitude"], event, facts)
+    return True, magnitude
 
 
 def load_events(path: str) -> list[ExogenousEvent]:
     df = pd.read_csv(path)
-    return [
-        ExogenousEvent(
+    payload_columns = [c for c in df.columns if c not in _CORE_CSV_COLUMNS]
+    events = []
+    for _, row in df.iterrows():
+        payload = {c: row[c] for c in payload_columns if pd.notna(row[c])}
+        affected_country = row["affected_country"] if pd.notna(row["affected_country"]) else ""
+        affected_sector = row["affected_sector"] if pd.notna(row["affected_sector"]) else ""
+        events.append(ExogenousEvent(
             event_id=row["event_id"], event_date=date.fromisoformat(row["event_date"]),
-            event_type=row["event_type"], affected_country=row["affected_country"] or "",
-            affected_sector=row["affected_sector"] or "", severity=int(row["severity"]),
-            estimated_value_eur=float(row["estimated_value_eur"]),
-        )
-        for _, row in df.iterrows()
-    ]
+            event_type=row["event_type"], affected_country=affected_country,
+            affected_sector=affected_sector, severity=int(row["severity"]),
+            estimated_value_eur=float(row["estimated_value_eur"]) if pd.notna(row.get("estimated_value_eur")) else 0.0,
+            payload=payload,
+        ))
+    return events

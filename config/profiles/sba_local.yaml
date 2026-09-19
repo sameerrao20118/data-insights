@@ -1,0 +1,42 @@
+# The `sba` schema's local profile -- the third schema proving Phase 1's
+# genericity (docs/generalization_plan.md), deliberately different from
+# both `fdm_local.yaml` and the legacy pipeline: REAL commercial
+# entities/sectors/loans (U.S. SBA PPP data) with synthetic deposit
+# activity layered on top. See data_generator/fdm/load_sba.py's docstring.
+#
+# No event_source configured -- no exogenous event fixture exists for
+# this schema yet; the endogenous detectors (deposits/lending) are the
+# proof here, same as config/bindings/legacy.yaml's own scope.
+config_version: 1
+profile: sba_local
+runtime:
+  target: local
+source:
+  backend: offline_local_flat
+  entity_map_ref: config/entities_sba.yaml
+  data_dir: data_generator/output_fdm_sba
+  binding: sba
+  access: read_only
+  cost_policy: no_cost_local_files
+analytics:
+  backend: duckdb_local
+llm:
+  provider: ollama
+  base_url: http://127.0.0.1:11434
+  model: qwen2.5:7b
+  allow_remote_inference: false
+  allow_paid_fallback: false
+  fallback: deterministic_template
+state:
+  backend: sqlite
+  path: var/agent_traces.db
+output:
+  backend: local
+  path: var/insights
+monitor:
+  enabled: false
+  interval_minutes: 60
+  max_concurrent_runs: 1
+cost:
+  paid_llm_calls_allowed: false
+  paid_cloud_services_allowed: false

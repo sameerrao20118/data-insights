@@ -53,18 +53,26 @@ def _build_source(profile: Profile) -> DataSource:
             data_dir = str(REPO_ROOT / data_dir)
         return FdmLocalSource(data_dir, contract_path)
 
-    if backend == "snowflake":
-        # NOT RUN -- no credentials, per CLAUDE.md. FdmSnowflakeSource also
-        # requires a domain_schema_map (which ENT_PRD schema each
-        # config/entities_fdm.yaml `domain:` maps to) that no profile field
-        # carries yet; add one when a real Snowflake profile is authorized
-        # rather than guess a mapping now.
-        raise NotImplementedError(
-            "source.backend='snowflake' needs a domain_schema_map (see "
-            "datainsights.sources.fdm_snowflake.FdmSnowflakeSource) not yet "
-            "exposed on a Profile, plus real credentials. NOT RUN -- construct "
-            "FdmSnowflakeSource directly if you have both, per CLAUDE.md's "
-            "explicit-authorization requirement."
+    if backend == "offline_local_flat":
+        from datainsights.sources.offline_local import OfflineLocalSource
+
+        data_dir = profile.source.data_dir
+        if not os.path.isabs(data_dir):
+            data_dir = str(REPO_ROOT / data_dir)
+        return OfflineLocalSource(data_dir, contract_path)
+
+    if backend in ("snowflake", "postgres", "sqlserver"):
+        # R5: one dialect-aware SqlSource. Constructing never connects; the
+        # first read needs <CONNECTION_REF>_* env vars and the driver, and
+        # raises a plain error naming what is missing. NOT RUN in this repo.
+        from datainsights.sources.sql_source import SqlSource
+
+        return SqlSource(
+            backend, contract_path, connection_ref=profile.source.connection_ref,
+            domain_schema_map=profile.source.domain_schema_map, default_schema=profile.source.default_schema,
+            statement_row_limit=profile.source.statement_row_limit or 50_000,
+            query_timeout_seconds=profile.source.query_timeout_seconds or 30,
+            warehouse_size=profile.source.warehouse_size, auto_suspend_seconds=profile.source.auto_suspend_seconds,
         )
 
     if backend == "s3_parquet":
@@ -75,24 +83,26 @@ def _build_source(profile: Profile) -> DataSource:
         )
 
     if backend == "glue_athena":
-        raise NotImplementedError(
-            "source.backend='glue_athena' is contract-only (docs/generalization_plan.md "
-            "Phase 3, Slot A2/A4) -- no confirmed source and no adapter exists yet. "
-            "Needs AWS credentials, a Glue catalog, and explicit authorization per CLAUDE.md."
+        from datainsights.sources.sql_source import AthenaSource
+
+        return AthenaSource(
+            contract_path, glue_database=profile.source.glue_database, connection_ref=profile.source.connection_ref,
+            athena_workgroup=profile.source.athena_workgroup, domain_schema_map=profile.source.domain_schema_map,
+            statement_row_limit=profile.source.statement_row_limit or 50_000,
+            query_timeout_seconds=profile.source.query_timeout_seconds or 30,
         )
 
     raise ValueError(f"unknown source backend: {backend!r}")
 
 
 def build_runtime(profile_name: str | None = None, *, data_dir_override: str | None = None,
-                   events_path_override: str | None = None) -> Runtime:
+                   events_path_override: str | None = None, cache: bool = True) -> Runtime:
     """profile_name defaults to $DATAINSIGHTS_PROFILE or 'fdm_local'.
     The two overrides exist ONLY for the ML scale-comparison scripts
     (datainsights/ml/compare_baselines.py, scale_evaluation.py), which
     need to point at data_generator/output_fdm_scaled* without a profile
     file per dataset -- everything else should use a named profile."""
-    profile_name = profile_name or os.environ.get("DATAINSIGHTS_PROFILE", "fdm_local")
-    profile = load_profile(profile_name) if _is_legacy_profile(profile_name) else _load_fdm_profile(profile_name)
+    profile = active_profile(profile_name)
 
     # profile.runtime.target == "agentcore" constructs fully here (proves the
     # profile is valid) -- nothing about AgentCore Runtime itself is invoked
@@ -102,10 +112,32 @@ def build_runtime(profile_name: str | None = None, *, data_dir_override: str | N
         profile.source.data_dir = data_dir_override
 
     source = _build_source(profile)
+    if cache:
+        # Measured, not assumed: without this the whole-book path re-reads
+        # every physical table once PER CLIENT -- 300 clients over a
+        # 182k-row dataset materialised 98,063,596 rows in 139s. Wrapping
+        # here makes it 181,848 rows in 19s, and flattens ms/client so it
+        # stops growing with book size. RunScopedCache has been built and
+        # tested since M8 but was never wired into a real run path.
+        #
+        # Scope is ONE run at ONE as-of (see RunScopedCache's docstring):
+        # build_runtime() is called once per run by every entry point, so
+        # that holds. Pass cache=False for a long-lived process that
+        # sweeps multiple as-of dates through a single Runtime.
+        from datainsights.sources.caching import RunScopedCache
+
+        source = RunScopedCache(source)
 
     rules_path = REPO_ROOT / "config" / "rules.yaml"
     with open(rules_path) as f:
         rules = yaml.safe_load(f)
+    # R6: a binding may carry `rules:` overrides (config/bindings/<schema>.yaml)
+    # -- merged over the global defaults, per leaf, so one schema's
+    # thresholds never touch another's.
+    if profile.source.binding:
+        from datainsights.semantic.binding import load_binding, merge_rules
+
+        rules = merge_rules(rules, load_binding(profile.source.binding).rules)
 
     model_config = ModelConfig(
         mode="local" if profile.llm.provider == "ollama" else "model_gateway",
@@ -149,8 +181,16 @@ def build_runtime(profile_name: str | None = None, *, data_dir_override: str | N
     )
 
 
+def active_profile(profile_name: str | None = None) -> Profile:
+    """The one place a profile is resolved: the given name, else
+    $DATAINSIGHTS_PROFILE, else fdm_local. R20: agents/model_factory.py
+    reads the model id from here and nowhere else."""
+    name = profile_name or os.environ.get("DATAINSIGHTS_PROFILE", "fdm_local")
+    return load_profile(name) if _is_legacy_profile(name) else _load_fdm_profile(name)
+
+
 def _is_legacy_profile(name: str) -> bool:
-    return name in ("offline_ollama", "snowflake_trial_ollama")
+    return name == "snowflake_trial_ollama"  # R23: offline_ollama (legacy) is gone
 
 
 def _load_fdm_profile(name: str) -> Profile:

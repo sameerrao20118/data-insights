@@ -1,0 +1,32 @@
+# R16 (docs/refactor_plan.md §6d). Gate = the rules that catch real bugs,
+# not style: pyflakes (unused imports/variables, undefined names, bad
+# f-strings) and syntax/IO errors. The codebase passes this set cleanly
+# as of 2026-09-18 (39 findings, fixed in the same change).
+#
+# The broader set (E, W, I, B, UP) reports ~1,900 findings today -- almost
+# all line length and quoted annotations. Turn rules on one at a time
+# with a fix-everything commit each; never widen the gate and the
+# violations in the same change.
+target-version = "py312"
+line-length = 120
+
+extend-exclude = [
+    ".venv",
+    "var",
+    "data_generator/output*",
+    "external_events/output*",
+    "onboarding/proposals",
+    "docs",
+]
+
+[lint]
+select = ["F", "E9"]
+
+[lint.per-file-ignores]
+# import-for-side-effect (domain registration) is the documented pattern
+# in agents/; each such line already carries its own noqa, this is belt
+# and braces so a future registration can't silently be "fixed" away.
+"agents/orchestrator.py" = ["F401"]
+"agents/entrypoint.py" = ["F401"]
+"dashboard/tabs/*.py" = ["F401", "F403", "F405"]  # R22: page modules import the shared names by design
+"dashboard/app.py" = ["F401", "F403", "F405"]

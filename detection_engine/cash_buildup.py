@@ -15,13 +15,13 @@ never itself or a later row.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pandas as pd
 
-REQUIRED_COLUMNS = ["PRTY_ID", "AGRMNT_ID", "AGRMNT_DLY_BAL_STRT_DTTM", "AGRMNT_LDGR_BAL_AMT"]
+REQUIRED_COLUMNS = ["party_id", "account_id", "observed_at", "balance"]
 
 
 @dataclass(frozen=True)
@@ -42,6 +42,13 @@ class DetectorConfig:
     # whole-book comparison says otherwise on real data.
     baseline: str = "deterministic"
 
+    # R17: per-currency floors (config/rules.yaml cash_buildup.min_prior_balance_by_currency);
+    # a currency not listed falls back to min_prior_balance.
+    min_prior_balance_by_currency: dict = field(default_factory=dict)
+
+    def floor_for(self, currency) -> float:
+        return float(self.min_prior_balance_by_currency.get(str(currency).upper(), self.min_prior_balance))
+
     @classmethod
     def from_rules_dict(cls, rules: dict) -> "DetectorConfig":
         d = rules["cash_buildup"]
@@ -50,12 +57,14 @@ class DetectorConfig:
             min_increase_pct=d["min_increase_pct"],
             min_prior_balance=d["min_prior_balance"],
             cooldown_days=d["cooldown_days"],
+            min_prior_balance_by_currency=d.get("min_prior_balance_by_currency") or {},
             rule_version=rules["fdm_rule_version"],
             baseline=d.get("baseline", "deterministic"),
         )
 
 
 DETECTION_COLUMNS = [
+    "currency",  # R17: which currency the floor and the amounts are in
     "detection_id", "rule_version", "prty_id", "agrmnt_id", "event_date",
     "detection_as_of", "current_balance", "prior_balance", "increase_pct",
     "window_days", "status", "baseline",
@@ -81,15 +90,18 @@ def detect(balances: pd.DataFrame, config: DetectorConfig, run_id: str) -> pd.Da
         from datainsights.ml.slots import InsufficientHistory
 
     bal = balances.copy()
-    bal["AGRMNT_DLY_BAL_STRT_DTTM"] = pd.to_datetime(bal["AGRMNT_DLY_BAL_STRT_DTTM"])
+    bal["observed_at"] = pd.to_datetime(bal["observed_at"])
     now = datetime.now(timezone.utc).isoformat()
     out_rows = []
 
-    for (prty_id, agrmnt_id), grp in bal.groupby(["PRTY_ID", "AGRMNT_ID"], sort=False):
-        grp = grp.sort_values("AGRMNT_DLY_BAL_STRT_DTTM").reset_index(drop=True)
-        dates = grp["AGRMNT_DLY_BAL_STRT_DTTM"].values.astype("datetime64[D]")
-        amounts = grp["AGRMNT_LDGR_BAL_AMT"].to_numpy(dtype=float)
-        window_start = grp["AGRMNT_DLY_BAL_STRT_DTTM"] - pd.Timedelta(days=config.window_days)
+    for (prty_id, agrmnt_id), grp in bal.groupby(["party_id", "account_id"], sort=False):
+        # R17: the floor is per currency when the frame carries one
+        currency = str(grp["currency"].iloc[0]).upper() if "currency" in grp.columns else "EUR"
+        floor = config.floor_for(currency)
+        grp = grp.sort_values("observed_at").reset_index(drop=True)
+        dates = grp["observed_at"].values.astype("datetime64[D]")
+        amounts = grp["balance"].to_numpy(dtype=float)
+        window_start = grp["observed_at"] - pd.Timedelta(days=config.window_days)
         window_start = window_start.values.astype("datetime64[D]")
         # last index strictly before the window_days-ago cutoff -- i.e. the
         # most recent prior observation at least window_days back
@@ -107,7 +119,7 @@ def detect(balances: pd.DataFrame, config: DetectorConfig, run_id: str) -> pd.Da
 
         for i in range(len(grp)):
             if config.baseline == "isolation_forest":
-                row_date = grp.iloc[i]["AGRMNT_DLY_BAL_STRT_DTTM"].date()
+                row_date = grp.iloc[i]["observed_at"].date()
                 try:
                     # as-at discipline: fit only on observations strictly
                     # before this row's own date, same guarantee the
@@ -119,7 +131,7 @@ def detect(balances: pd.DataFrame, config: DetectorConfig, run_id: str) -> pd.Da
                     prior_balance, increase_pct = None, None
                 else:
                     current = amounts[i]
-                    if prior_balance < config.min_prior_balance:
+                    if prior_balance < floor:
                         continue
                     increase_pct = (current - prior_balance) / prior_balance
                     status = "detected" if increase_pct >= config.min_increase_pct else "not_detected"
@@ -129,7 +141,7 @@ def detect(balances: pd.DataFrame, config: DetectorConfig, run_id: str) -> pd.Da
             else:
                 prior_balance = amounts[prior_idx[i]]
                 current = amounts[i]
-                if prior_balance < config.min_prior_balance:
+                if prior_balance < floor:
                     continue  # too small a base to call a "buildup" meaningful
                 increase_pct = (current - prior_balance) / prior_balance
                 status = "detected" if increase_pct >= config.min_increase_pct else "not_detected"
@@ -139,11 +151,12 @@ def detect(balances: pd.DataFrame, config: DetectorConfig, run_id: str) -> pd.Da
 
             row = grp.iloc[i]
             out_rows.append({
-                "detection_id": f"{config.rule_version}:{agrmnt_id}:{row['AGRMNT_DLY_BAL_STRT_DTTM'].date().isoformat()}",
+                "detection_id": f"{config.rule_version}:{agrmnt_id}:{row['observed_at'].date().isoformat()}",
                 "rule_version": config.rule_version,
                 "prty_id": prty_id,
+                "currency": currency,
                 "agrmnt_id": agrmnt_id,
-                "event_date": row["AGRMNT_DLY_BAL_STRT_DTTM"].date().isoformat(),
+                "event_date": row["observed_at"].date().isoformat(),
                 "detection_as_of": now,
                 "current_balance": round(float(amounts[i]), 2),
                 "prior_balance": None if prior_balance is None else round(float(prior_balance), 2),

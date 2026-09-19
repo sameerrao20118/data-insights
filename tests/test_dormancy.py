@@ -11,11 +11,11 @@ CFG = DetectorConfig(dormancy_days=60, cooldown_days=45, rule_version="test.v1")
 
 
 def ev(agrmnt_id, prty_id, d: date):
-    return {"PRTY_ID": prty_id, "AGRMNT_ID": agrmnt_id, "FIN_EVNT_PSTD_DT": d.isoformat()}
+    return {"party_id": prty_id, "account_id": agrmnt_id, "posted_at": d.isoformat()}
 
 
 def test_never_active_account_not_flagged():
-    result = detect(pd.DataFrame(columns=["PRTY_ID", "AGRMNT_ID", "FIN_EVNT_PSTD_DT"]),
+    result = detect(pd.DataFrame(columns=["party_id", "account_id", "posted_at"]),
                      ["A1"], CFG, "run1", date(2024, 6, 1))
     assert result.empty
 

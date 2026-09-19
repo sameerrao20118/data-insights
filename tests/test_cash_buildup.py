@@ -15,8 +15,8 @@ CFG = DetectorConfig(
 
 
 def bal_row(agrmnt_id, prty_id, d: date, amount):
-    return {"PRTY_ID": prty_id, "AGRMNT_ID": agrmnt_id,
-            "AGRMNT_DLY_BAL_STRT_DTTM": d.isoformat(), "AGRMNT_LDGR_BAL_AMT": amount}
+    return {"party_id": prty_id, "account_id": agrmnt_id,
+            "observed_at": d.isoformat(), "balance": amount}
 
 
 def test_no_prior_observation_is_insufficient_evidence():

@@ -247,6 +247,84 @@ Two disclosed, unfixed issues worth carrying into any continuation:
 2. **`pd_migration`** (Risk) is built and tested but unwired, correctly
    — blocked on data that doesn't exist, not forgotten.
 
+## 8b. Performance and scale -- measured, not estimated
+
+Measured on the real whole-book path (M16 in `docs/changelog.md`),
+because "does this scale" had no documented answer before.
+
+| Dataset | Clients | Rows materialised | Wall | ms/client |
+|---|---|---|---|---|
+| 182k rows, no cache | 300 | 98,063,596 | 139.4s | 465 |
+| 182k rows, cached | 300 | 181,848 | 18.9s | 63 |
+
+- Cost grew as **O(clients x table_size)** -- ms/client rose with dataset
+  size (190 -> 465), the quadratic signature. `RunScopedCache` is now
+  wired into `build_runtime()`, which flattens ms/client against book
+  size.
+- **That ceiling is now removed (R13, M22):** `CanonicalSource` used to
+  re-merge and re-project the full table per client (860 reads
+  re-assembling 2,373,916 rows for 60 clients). It now caches the
+  projected frame per (concept, as_at) and slices a client by a position
+  index; `evaluate_book` shares ONE `CanonicalSource` across the book.
+  Measured: 300 clients 12.4 s -> 4.55 s, ms/client 41 -> 15 and flat
+  with book size. Golden equivalence proven on a window with 75
+  positives (`tests/test_set_based_book_evaluation.py`); the worklist is
+  byte-identical. What remains per client is the detectors themselves.
+- **There is no parallelism anywhere** -- no ThreadPool, multiprocessing
+  or asyncio. `agents/orchestrator.py`'s registry loop is the intended
+  split point (`docs/agentic_plan.md` §3).
+- For a real bank book, the order of work is: predicate pushdown ->
+  aggregate pushdown (return features, not rows) -> set-based batch.
+  See `docs/ml_strategy_plan.md` §7 and T6.
+
+## 8c. Self-service ML -- who decides a field is worth challenging, and how
+
+Full design: `docs/ml_strategy_plan.md`. Baby-steps guide: `docs/ml_quickstart.md`.
+
+**The question this answers**: given a NEW schema, on what basis does ML
+ever apply to one of its fields, and who decides? Three gates, in order,
+never an LLM alone:
+
+1. **Gate 1, deterministic** (`onboarding/ml_profiler.py`): numeric, has
+   a time column, >=8 observations/entity, >=30 entities, <=20% null,
+   non-constant. No opinion on relevance, only on whether there's enough
+   clean history for a comparison to mean anything.
+2. **Gate 2, the binding** (already exists): a measure a schema's binding
+   already maps to a canonical concept (`config/semantic_model.yaml`) is
+   enabled automatically, no config needed -- it's right not because an
+   algorithm guessed well, but because a human already gated acceptance
+   when the binding was written.
+3. **Gate 3, LLM proposal, cold-start only** (`onboarding/ml_measure_proposer.py`):
+   for a schema-specific field the canonical model has never seen. Same
+   propose-validate-reject discipline as every other agent here --
+   `config/ml_policy.yaml` never updates from an LLM call alone, only
+   from a human clicking Save (dashboard's **ML opportunities** tab) or
+   hand-editing the YAML.
+
+**Library**: scikit-learn only, deliberately not Keras/TensorFlow --
+tabular, 8-30 observations per client, explainability is a hard SS1/23
+requirement, and sklearn is already on the bank's Artifactory.
+
+**Where models run**: E2 baselines (per-client, many small fits) stay
+in-process, never behind an endpoint -- thousands of per-client SageMaker
+endpoints is a cost/latency anti-pattern. E4 propensity (one whole-book
+model, once RM-feedback labels exist) is the legitimate SageMaker case --
+contract-only today (`datainsights/ml/backends/`), raises
+`NotImplementedError` naming the exact blocker.
+
+**Snowflake**: push compute to the data via predicate pushdown -> aggregate
+pushdown (`datainsights/features.py::compute_many()`, proven for the flat
+schema backend, not yet for FDM's bi-temporal one) -> Snowpark ML for E4
+training only. Snowpark ML is explicitly NOT pre-authorized just because
+it's a different category from the forbidden Cortex/AI_COMPLETE path --
+it needs its own sign-off.
+
+**Status, 2026-09-18**: T1-T9 of the plan all built and verified (see
+`docs/changelog.md` M17). A user can scan any schema for ML-eligible
+measures, set/save policy, and run a real champion/challenger comparison
+from the dashboard -- for the `fdm` schema's 2 known E2 measures today;
+legacy/sba report "not wired" honestly rather than fake a result.
+
 ## 9. Known limitations to state honestly if this work continues
 
 - **Contamination**: any precision/recall number from a session that
@@ -306,6 +384,8 @@ docs/current_state.md                   verified vs. NOT RUN vs. not built, plus
 docs/agentic_plan.md                    the agentic build plan (A0-A5), phase-by-phase execution status
 docs/gap_analysis.md                    current state vs. decision record / agentic plan, table form
 docs/adding_a_new_domain.md             step-by-step checklist for a new domain (proven with Risk)
+docs/hardcoding_audit.md                architect's review: what is genuinely generic vs generic-by-shim vs hardcoded, with evidence
+docs/refactor_plan.md                   THE PLAN: 12 tasks in 4 waves (R1-R12), trigger model, RM journey, where learning enters
 ```
 
 ## 11. Working conventions this project holds itself to
@@ -368,27 +448,15 @@ docs/adding_a_new_domain.md             step-by-step checklist for a new domain 
 
 ---
 
-## Appendix: the original legacy-schema pipeline
+## Appendix: the legacy-schema pipeline (retired, R23)
 
-A separate, smaller pipeline (`datainsights/cli.py`,
-`detection_engine/large_incoming_payment.py`, `datainsights/narrative/`,
-`evaluation/evaluate.py`) predates the FDM build above and still passes
-its own tests. It is kept only because this project's working
-convention ("continue from existing work, don't rebuild") never made it
-a target to replace — it does not add capability the FDM build lacks,
-is not extended or referenced by anything above, and new work should
-not add to it. If you need its detail: it read `config/entities.yaml`
-through `OfflineLocalSource`, ran one endogenous detector
-(`large_incoming_payment`, MAD-based) and one exogenous detector
-(`external_macro_event`, sector/country match), and wrote to its own
-`datainsights/worklist.py`/`digest.py`/`state.py`. `docs/architecture.md`'s
-own appendix has the full diagram if you need to touch it; otherwise
-treat sections 1–12 above as the current, and only, design worth
-carrying forward.
-
----
-
-*End of condensed context. If continuing this work in a new environment,
-re-establish the same non-negotiable constraints (§2) before writing any
-new code — they are the load-bearing part of this project, not
-formatting preference.*
+The original CLI pipeline (`datainsights/cli.py`, `runner.py`,
+`ranking.py`, `worklist.py`, `state.py`, `digest.py`, `status.py`,
+`detection_engine/external_macro_event.py`, the macro narrator) was
+deleted on 2026-09-19 — two pipelines were permanent cost and the
+second one demonstrated the weaker path. What survived: its schema, as
+`config/bindings/legacy.yaml` + `config/profiles/legacy_local.yaml`, run
+by the one pipeline above; its `large_incoming_payment` detector, ported
+canonically (same statistics, fires on 45 of 606 legacy clients);
+`evaluation/evaluate.py`, kept as the only ground-truth reader until R18.
+`docs/changelog.md` M25 records the move.

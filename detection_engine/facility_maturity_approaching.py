@@ -13,7 +13,7 @@ from datetime import date, datetime, timezone
 
 import pandas as pd
 
-REQUIRED_COLUMNS = ["PRTY_ID", "AGRMNT_ID", "AGRMNT_CLOSE_DT"]
+REQUIRED_COLUMNS = ["party_id", "account_id", "close_date"]
 
 
 @dataclass(frozen=True)
@@ -46,31 +46,31 @@ def detect(agreements: pd.DataFrame, config: DetectorConfig, run_id: str, as_of:
     if missing:
         raise ValueError(f"facility_maturity_approaching.detect missing required columns: {missing}")
 
-    agr = agreements.dropna(subset=["AGRMNT_CLOSE_DT"]).copy()
-    agr = agr[agr["AGRMNT_CLOSE_DT"] != ""]
+    agr = agreements.dropna(subset=["close_date"]).copy()
+    agr = agr[agr["close_date"] != ""]
     if agr.empty:
         return pd.DataFrame(columns=DETECTION_COLUMNS)
 
-    agr["AGRMNT_CLOSE_DT"] = pd.to_datetime(agr["AGRMNT_CLOSE_DT"])
-    agr["days_to_close"] = (agr["AGRMNT_CLOSE_DT"] - pd.Timestamp(as_of)).dt.days
+    agr["close_date"] = pd.to_datetime(agr["close_date"])
+    agr["days_to_close"] = (agr["close_date"] - pd.Timestamp(as_of)).dt.days
     now = datetime.now(timezone.utc).isoformat()
 
     hits = agr[(agr["days_to_close"] >= 0) & (agr["days_to_close"] <= config.horizon_days)]
     out_rows = []
     for _, row in hits.iterrows():
         out_rows.append({
-            "detection_id": f"{config.rule_version}:{row['AGRMNT_ID']}",
+            "detection_id": f"{config.rule_version}:{row['account_id']}",
             "rule_version": config.rule_version,
-            "prty_id": row["PRTY_ID"],
-            "agrmnt_id": row["AGRMNT_ID"],
+            "prty_id": row["party_id"],
+            "agrmnt_id": row["account_id"],
             "event_date": as_of.isoformat(),
             "detection_as_of": now,
-            "close_date": row["AGRMNT_CLOSE_DT"].date().isoformat(),
+            "close_date": row["close_date"].date().isoformat(),
             "days_to_close": int(row["days_to_close"]),
             # optional -- carried so a renewal can be sized at the current
             # limit; None when the caller's frame has no limit column
-            "orig_limit": (float(row["AGRMNT_ORIG_LIM"])
-                           if "AGRMNT_ORIG_LIM" in row.index and pd.notna(row["AGRMNT_ORIG_LIM"])
+            "orig_limit": (float(row["original_limit"])
+                           if "original_limit" in row.index and pd.notna(row["original_limit"])
                            else None),
             "status": "detected",
         })

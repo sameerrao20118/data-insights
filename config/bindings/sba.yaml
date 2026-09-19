@@ -1,0 +1,88 @@
+# SBA schema binding -- the third proof of R1 (docs/generalization_plan.md
+# Phase 1), deliberately different from both `fdm` and `legacy`: REAL
+# commercial entities, sectors (NAICS), and loans (U.S. SBA PPP data),
+# with SYNTHETIC deposit activity layered on top -- see
+# data_generator/fdm/load_sba.py's own docstring for exactly what's real
+# vs synthetic. config/entities_sba.yaml is the physical contract.
+#
+# One physical `agreements` table carries BOTH the real loan rows
+# (product_type_cd=PPP_LOAN) and the synthetic deposit rows
+# (product_type_cd=DEP) -- the same pattern config/bindings/fdm.yaml's
+# single AGREEMENT table already uses for DEP/LON/MTG, reused here rather
+# than inventing a new CanonicalSource capability.
+#
+# Several concepts are genuinely unavailable under this schema -- stated
+# honestly, not worked around:
+#   - RiskGradeVersion, PartyMetricVersion: no continuous risk-grade or
+#     PD history exists in the real SBA release -- only a one-time
+#     terminal loan status (paid in full / charged off), which is not a
+#     bi-temporal grade series.
+#   - CollateralValuation: PPP loans are federally guaranteed, not
+#     collateralised -- no collateral data exists in this source at all.
+#   - Party.high_risk_flag: not a field SBA discloses.
+schema: sba
+contract_ref: config/entities_sba.yaml
+
+# R6: this schema's own thresholds, merged over config/rules.yaml by
+# build_runtime. SBA deposit activity is synthetic and USD-denominated on
+# smaller businesses than the FDM book, so the cash-buildup floor is
+# lower here -- FDM's 5000 is untouched.
+rules:
+  cash_buildup:
+    min_prior_balance: 2500
+
+concepts:
+  Party:
+    entity: parties
+    fields:
+      party_id: party_id
+      segment: business_type
+      sector_code: naics_code
+    derived:
+      country_code: {const: US}
+    # sector_code is a plain rename (real NAICS 2-digit code, not a join) --
+    # unlike fdm.yaml's Party (which joins PARTY_DEMOGRAPHIC/PARTY_LOCATOR),
+    # this schema's one `party` table already carries everything real about
+    # the borrower in one row.
+
+  Account:
+    entity: agreements
+    fields:
+      account_id: agreement_id
+      party_id: party_id
+      product_code: product_type_cd
+      original_limit: orig_limit
+      close_date: close_dt
+    derived:
+      product_class: {from: product_type_cd, map: {PPP_LOAN: facility, DEP: deposit}, default: other}
+      currency: {const: USD}
+    # fixed_rate_end_date: not in this schema (PPP loans have a fixed
+    # program-set rate, not a mortgage-style fixed-rate-then-reverts
+    # structure) -- left unmapped, same graceful-absence handling as
+    # config/bindings/legacy.yaml's Account.
+
+  BalanceObservation:
+    entity: balances
+    fields:
+      account_id: account_id
+      observed_at: observed_at
+      balance: balance
+
+  Transaction:
+    entity: transactions
+    fields:
+      transaction_id: transaction_id
+      account_id: account_id
+      posted_at: posted_at
+      amount: amount
+      currency: currency
+      direction: direction
+
+  RiskGradeVersion:
+    unavailable: "The real SBA release carries only a one-time terminal loan status (paid in full / charged off), not a bi-temporal risk-grade history. Add a real grade series here if one is ever sourced, rather than inventing bi-temporal versions from a single status field."
+
+  PartyMetricVersion:
+    unavailable: "No PD/metric history exists in the real SBA release or anywhere else in this schema."
+
+  CollateralValuation:
+    unavailable: "PPP loans are federally guaranteed, not collateralised -- no collateral entity exists in this source."

@@ -15,8 +15,8 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-REQUIRED_COLUMNS = ["PRTY_ID", "AGRMNT_ID", "AGRMNT_DLY_BAL_STRT_DTTM",
-                    "AGRMNT_LDGR_BAL_AMT", "AGRMNT_ORIG_LIM"]
+REQUIRED_COLUMNS = ["party_id", "account_id", "observed_at",
+                    "balance", "original_limit"]
 
 
 @dataclass(frozen=True)
@@ -49,25 +49,25 @@ def detect(balances: pd.DataFrame, config: DetectorConfig, run_id: str) -> pd.Da
         return pd.DataFrame(columns=DETECTION_COLUMNS)
 
     bal = balances.copy()
-    bal = bal[bal["AGRMNT_ORIG_LIM"] > 0]  # a DEP row slipping in has no limit -- not evaluable
+    bal = bal[bal["original_limit"] > 0]  # a DEP row slipping in has no limit -- not evaluable
     if bal.empty:
         return pd.DataFrame(columns=DETECTION_COLUMNS)
-    bal["utilization_pct"] = bal["AGRMNT_LDGR_BAL_AMT"] / bal["AGRMNT_ORIG_LIM"]
+    bal["utilization_pct"] = bal["balance"] / bal["original_limit"]
     now = datetime.now(timezone.utc).isoformat()
 
     hits = bal[bal["utilization_pct"] > config.utilization_threshold_pct]
     out_rows = []
     for _, row in hits.iterrows():
-        event_date = pd.to_datetime(row["AGRMNT_DLY_BAL_STRT_DTTM"]).date().isoformat()
+        event_date = pd.to_datetime(row["observed_at"]).date().isoformat()
         out_rows.append({
-            "detection_id": f"{config.rule_version}:{row['AGRMNT_ID']}:{event_date}",
+            "detection_id": f"{config.rule_version}:{row['account_id']}:{event_date}",
             "rule_version": config.rule_version,
-            "prty_id": row["PRTY_ID"],
-            "agrmnt_id": row["AGRMNT_ID"],
+            "prty_id": row["party_id"],
+            "agrmnt_id": row["account_id"],
             "event_date": event_date,
             "detection_as_of": now,
-            "drawn_amount": round(float(row["AGRMNT_LDGR_BAL_AMT"]), 2),
-            "orig_limit": round(float(row["AGRMNT_ORIG_LIM"]), 2),
+            "drawn_amount": round(float(row["balance"]), 2),
+            "orig_limit": round(float(row["original_limit"]), 2),
             "utilization_pct": round(float(row["utilization_pct"]), 4),
             "status": "detected",
         })

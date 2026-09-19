@@ -25,26 +25,35 @@ EVENTS_PATH = os.path.join(REPO_ROOT, "external_events", "output_fdm_extracted",
 REVIEW_PATH = os.path.join(REPO_ROOT, "external_events", "output_fdm_extracted", "review_queue.csv")
 
 
+def ingest(notices, model, *, events_path: str = EVENTS_PATH, review_path: str = REVIEW_PATH,
+           ingest_date: date | None = None, log=print) -> list:
+    """R12: the A1 extraction as a callable step. `notices` is a list of
+    (source_ref, text). Each result lands in exactly one of the two
+    stores; a stored extracted event is what the next incremental run
+    (datainsights/runs.py) picks up to enqueue the clients it qualifies."""
+    results = []
+    for source_ref, text in notices:
+        result = extract_event(text, source_name="manual_ingest", source_ref=source_ref,
+                                model=model, ingest_date=ingest_date or date.today())
+        dest = store_result(result, events_path, review_path)
+        log(f"[{source_ref}] status={result.status} -> {dest}")
+        if result.event:
+            e = result.event
+            log(f"  {e.event_type} | {e.event_date} | sector={e.affected_sector} "
+                f"country={e.affected_country} value=EUR {e.estimated_value_eur:,.0f}")
+        if result.problems:
+            log(f"  problems: {result.problems}")
+        results.append(result)
+    return results
+
+
 def main():
     model = get_model(build_runtime("fdm_local").model_config)
-    notices = [("sample_ted_notice", NOTICE_MATCHING_FIXTURE)]
-
     print("=" * 78)
     print("A1 -- ingesting notice text into a validated ExogenousEvent")
     print("Synthetic notice, written for this repo. Not a real tender.")
     print("=" * 78)
-
-    for source_ref, text in notices:
-        result = extract_event(text, source_name="manual_ingest", source_ref=source_ref,
-                                model=model, ingest_date=date(2025, 7, 10))
-        dest = store_result(result, EVENTS_PATH, REVIEW_PATH)
-        print(f"\n[{source_ref}] status={result.status} -> {dest}")
-        if result.event:
-            e = result.event
-            print(f"  {e.event_type} | {e.event_date} | sector={e.affected_sector} "
-                  f"country={e.affected_country} value=EUR {e.estimated_value_eur:,.0f}")
-        if result.problems:
-            print(f"  problems: {result.problems}")
+    ingest([("sample_ted_notice", NOTICE_MATCHING_FIXTURE)], model, ingest_date=date(2025, 7, 10))
 
 
 if __name__ == "__main__":

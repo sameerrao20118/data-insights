@@ -1,0 +1,4 @@
+# Development-only tooling (R16). Runtime deps stay in requirements.txt.
+-r requirements.txt
+ruff==0.16.8
+pre-commit>=3.7

@@ -11,8 +11,8 @@ CFG = DetectorConfig(horizon_days=90, cooldown_days=30, rule_version="test.v1")
 
 
 def mort(agrmnt_id, prty_id, fxd_end):
-    return {"PRTY_ID": prty_id, "AGRMNT_ID": agrmnt_id,
-            "MORT_FXED_RT_END_DT": fxd_end.isoformat() if fxd_end else ""}
+    return {"party_id": prty_id, "account_id": agrmnt_id,
+            "fixed_rate_end_date": fxd_end.isoformat() if fxd_end else ""}
 
 
 def test_within_horizon_detected():

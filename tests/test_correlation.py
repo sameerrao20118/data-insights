@@ -13,7 +13,7 @@ from datetime import date
 
 import pytest
 
-from datainsights.correlation.dedupe import ExistingItemChecker, dedupe
+from datainsights.correlation.dedupe import dedupe
 from datainsights.correlation.hypothesis import Recommendation, assemble
 from datainsights.correlation.signal_bus import SignalBus
 from detection_engine.signal import Signal
@@ -254,4 +254,6 @@ def test_sizing_config_loads_from_rules_yaml():
     path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "rules.yaml")
     with open(path) as f:
         loaded = EndogenousSizing.from_rules_dict(yaml.safe_load(f))
-    assert loaded == EndogenousSizing()  # defaults mirror the reviewed config
+    defaults = EndogenousSizing()  # scalar defaults mirror the reviewed config
+    assert (loaded.target_utilization_pct, loaded.min_offer_eur) == (defaults.target_utilization_pct, defaults.min_offer_eur)
+    assert loaded.min_offer_by_currency["EUR"] == loaded.min_offer_eur  # R17: EUR floor agrees with the scalar

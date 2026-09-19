@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-REQUIRED_COLUMNS = ["PRTY_ID", "AGRMNT_ID", "FIN_EVNT_PSTD_DT", "FIN_EVNT_AMT", "FIN_EVNT_SBTYP_CD"]
+REQUIRED_COLUMNS = ["party_id", "account_id", "posted_at", "amount", "direction"]
 
 
 @dataclass(frozen=True)
@@ -73,7 +73,7 @@ def detect(events: pd.DataFrame, config: DetectorConfig, run_id: str) -> pd.Data
     if config.baseline not in VALID_BASELINES:
         raise ValueError(f"revenue_pattern_change: unknown baseline {config.baseline!r}, "
                          f"must be one of {VALID_BASELINES}")
-    credits = events[events["FIN_EVNT_SBTYP_CD"] == "CRD"].copy()
+    credits = events[events["direction"] == "credit"].copy()
     if credits.empty:
         return pd.DataFrame(columns=DETECTION_COLUMNS)
 
@@ -81,14 +81,14 @@ def detect(events: pd.DataFrame, config: DetectorConfig, run_id: str) -> pd.Data
         from datainsights.ml.baselines import IsolationForestBaseline
         from datainsights.ml.slots import InsufficientHistory
 
-    credits["FIN_EVNT_PSTD_DT"] = pd.to_datetime(credits["FIN_EVNT_PSTD_DT"])
+    credits["posted_at"] = pd.to_datetime(credits["posted_at"])
     now = datetime.now(timezone.utc).isoformat()
     out_rows = []
 
-    for (prty_id, agrmnt_id), grp in credits.groupby(["PRTY_ID", "AGRMNT_ID"], sort=False):
-        grp = grp.sort_values("FIN_EVNT_PSTD_DT").reset_index(drop=True)
-        dates = grp["FIN_EVNT_PSTD_DT"]
-        amounts = grp["FIN_EVNT_AMT"].to_numpy(dtype=float)
+    for (prty_id, agrmnt_id), grp in credits.groupby(["party_id", "account_id"], sort=False):
+        grp = grp.sort_values("posted_at").reset_index(drop=True)
+        dates = grp["posted_at"]
+        amounts = grp["amount"].to_numpy(dtype=float)
         if config.baseline == "isolation_forest":
             iso_model = IsolationForestBaseline(
                 {(agrmnt_id, "credit"): list(zip(dates.dt.date, amounts.tolist()))})

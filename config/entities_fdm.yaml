@@ -70,6 +70,13 @@ entities:
       RSK_GRD_DT: {type: date, nullable: false}
       PRTY_SGMNT_CD: {type: string, nullable: false, allowed: [SME, MID, LRGE, INST]}
       HIGH_RSK_CUST_IND: {type: string, nullable: false, allowed: ["Y", "N"]}
+      # RM001..RM020, deterministically derived from PRTY_ID
+      # (sha256(prty_id) mod 20) -- synthetic assignment, not real HR/
+      # roster data, but stable across regenerations since it consumes no
+      # rng draw. Added M17 (docs/current_state.md) to close a real gap:
+      # the FDM worklist had no way to route or access-scope a
+      # recommendation to an RM.
+      RLTNSHP_MGR_ID: {type: string, nullable: false}
     time_semantics:
       event_time_field: EFFECTIVE_START_DT
       ingestion_time_field: null

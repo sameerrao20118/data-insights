@@ -48,3 +48,50 @@ def test_domain_all_never_raises_for_a_malformed_model_and_falls_back():
 def test_missing_prty_id_raises():
     with pytest.raises(KeyError):
         invoke({"domain": "all", "as_of": "2025-10-04", "narrate": False})
+
+
+# --- local vs AgentCore equivalence (docs/generalization_plan.md Phase 3) --
+#
+# "Two methods to run it" means one function, two callers -- not two
+# implementations to keep in sync. agentcore_entrypoint() only exists if
+# bedrock-agentcore is installed (it is, in this venv); BedrockAgentCoreApp
+# .entrypoint() returns the function itself unchanged (verified against
+# the installed package's source), so calling agentcore_entrypoint(payload)
+# never starts a server or makes any network call -- it is exactly
+# agents.entrypoint.invoke under a different name, registered as the
+# handler AgentCore Runtime would call if this were ever deployed.
+
+def test_agentcore_entrypoint_is_the_same_function_agentcore_runtime_would_call():
+    from agents import entrypoint
+
+    assert entrypoint.app is not None, (
+        "bedrock-agentcore not importable in this environment -- "
+        "agents.entrypoint.app should be None only when the package is "
+        "missing, never for any other reason"
+    )
+    assert entrypoint.app.handlers["main"] is entrypoint.agentcore_entrypoint
+
+
+def test_agentcore_entrypoint_produces_identical_output_to_invoke():
+    """The actual equivalence proof: the same payload through invoke()
+    (what the local CLI calls) and agentcore_entrypoint() (the plain
+    function BedrockAgentCoreApp.entrypoint() registered unchanged, per
+    the installed package's own source -- no server started, no network
+    call) must return byte-identical results."""
+    from agents.entrypoint import agentcore_entrypoint
+
+    payload = {"prty_id": "PRTY00036", "domain": "all", "as_of": "2025-10-04", "narrate": False}
+    assert agentcore_entrypoint(payload) == invoke(payload)
+
+
+def test_fdm_agentcore_profile_validates_and_constructs_as_far_as_honestly_possible():
+    """config/profiles/fdm_agentcore.yaml (the AgentCore-shaped
+    counterpart to fdm_local.yaml) must pass every field-level validator
+    in datainsights/config.py and construct up to its first real
+    blocking point -- never silently fall back to local files, and never
+    fail for a config-shape reason (only for the genuinely NOT RUN
+    s3_parquet adapter)."""
+    from datainsights.runtime import build_runtime
+
+    with pytest.raises(NotImplementedError, match="s3_parquet"):
+        build_runtime("fdm_agentcore")

@@ -42,6 +42,16 @@ class RunScopedCache:
         self.hits = 0
         self.misses = 0
 
+    def __getattr__(self, name: str):
+        """Delegate anything not explicitly wrapped above to the inner
+        source -- attributes (data_dir, contract paths) and any method a
+        non-FDM source exposes that this wrapper predates. Private names
+        raise instead of delegating, so a half-constructed instance can
+        never recurse through _source."""
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return getattr(self._source, name)
+
     def _cached(self, key: tuple, compute):
         if key in self._memo:
             self.hits += 1

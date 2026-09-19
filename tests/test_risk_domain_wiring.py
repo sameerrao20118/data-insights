@@ -16,7 +16,7 @@ import pytest
 import yaml
 
 from agents.orchestrator import evaluate_book, evaluate_client
-from datainsights.correlation.hypothesis import REVENUE_CATEGORIES
+from datainsights.category_registry import revenue_categories
 from datainsights.sources.fdm_local import FdmLocalSource
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -59,7 +59,7 @@ def test_whole_book_shows_at_least_one_genuine_rating_downgrade(source, rules):
     downgraded_prty_ids = {s.prty_id for s in risk_signals}
     recs_for_downgraded = [ev.recommendation for ev in evaluations
                            if ev.prty_id in downgraded_prty_ids and ev.recommendation]
-    violations = [r for r in recs_for_downgraded if r.nba_category in REVENUE_CATEGORIES]
+    violations = [r for r in recs_for_downgraded if r.nba_category in revenue_categories()]
     assert violations == [], (
         f"a client with a genuine rating downgrade still got a revenue-category "
         f"recommendation: {[(r.prty_id, r.nba_category) for r in violations]}"

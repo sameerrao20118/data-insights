@@ -33,7 +33,7 @@ def check_thing_not_detected(prty_id: str) -> dict:
 
 
 def test_model_factory_local_uses_ollama_model():
-    model = get_model(ModelConfig(mode="local", model_id="qwen2.5:7b"))
+    model = get_model(ModelConfig(mode="local"))
     from strands.models.ollama import OllamaModel
     assert isinstance(model, OllamaModel)
 
@@ -140,11 +140,11 @@ def _ollama_reachable() -> bool:
 @pytest.mark.skipif(not _ollama_reachable(), reason="local Ollama server not reachable at localhost:11434")
 def test_live_agent_produces_a_validated_or_fallback_result():
     """Not asserting the LLM's narrative quality -- only that the whole
-    real pipeline (Strands Agent + real qwen2.5:7b + tool calling +
+    real pipeline (Strands Agent + the profile's real local model + tool calling +
     validate-or-fallback) runs to completion and returns a well-formed
     result either way, exactly like ollama_narrator.py's existing
     live-dependent tests are scoped."""
-    model = get_model(ModelConfig(mode="local", model_id="qwen2.5:7b"))
+    model = get_model(ModelConfig(mode="local"))
     agent = DomainAgent(domain="deposits", tools=[check_thing_detected], model=model)
     result = agent.evaluate("PRTY00001")
     assert result.suggested_action in agent.allowed_actions
@@ -243,6 +243,8 @@ def test_model_label_is_auditable_not_an_object_repr():
     -- useless as an audit trail entry."""
     from agents.domain_agent import model_label
 
-    label = model_label(get_model(ModelConfig(mode="local", model_id="qwen2.5:7b")))
-    assert label == "qwen2.5:7b"
+    from agents.model_factory import default_model_id
+
+    label = model_label(get_model(ModelConfig(mode="local")))
+    assert label == default_model_id()  # R20: the profile is the only source of the id
     assert "object at" not in model_label(FailingModel())

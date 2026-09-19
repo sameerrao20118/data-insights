@@ -28,9 +28,11 @@ import pandas as pd
 
 from agents.orchestrator import evaluate_book
 from datainsights.correlation.dedupe import dedupe
-from datainsights.correlation.hypothesis import REVENUE_CATEGORIES
+from datainsights.category_registry import revenue_categories
 from datainsights.fdm_worklist import build_rm_worklist, write_rm_digest, write_rm_worklist_csv
 from datainsights.runtime import build_runtime
+from datainsights.semantic.binding import load_binding
+from datainsights.semantic.canonical import CanonicalSource
 from datainsights.sinks.mimo_placeholder import write_insights
 from external_events.exposure_qualifier import load_events
 from external_events.extracted_event_store import read_extracted_events
@@ -57,15 +59,20 @@ def main():
     print("Synthetic data only. Nothing here is a real client or a real event.")
     print("=" * 78)
 
-    if not os.path.isdir(os.path.join(REPO_ROOT, "data_generator", "output_fdm")):
-        raise SystemExit(
-            "Generate the demo data first:\n"
-            "  python -m data_generator.fdm.generate_fdm --seed 42\n"
-            "  python -m data_generator.fdm.generate_fdm_events"
-        )
-
     rt = build_runtime(args.profile)
     rules, source, OUT_DIR = rt.rules, rt.source, rt.out_dir
+    data_dir = rt.profile.source.data_dir
+    if data_dir and not os.path.isdir(data_dir if os.path.isabs(data_dir) else os.path.join(REPO_ROOT, data_dir)):
+        raise SystemExit(
+            f"Profile {args.profile!r} points at {data_dir!r}, which does not exist -- generate or "
+            f"fetch that source's data first (see docs/user_guide.md)."
+        )
+    # R3 (docs/refactor_plan.md): every read below goes through the canonical
+    # layer. This script used to call FdmLocalSource-only methods
+    # (source.party(), .party_demographic(), .party_locator()) and so ran
+    # against the fdm profile alone -- confirmed by running it on
+    # legacy_local and watching it fail. Now any bound schema works.
+    canonical = CanonicalSource(source, load_binding(rt.binding_name or "fdm"))
 
     extracted = read_extracted_events(EXTRACTED_EVENTS_PATH)
     if extracted:
@@ -76,21 +83,22 @@ def main():
         event_source = f"profile event source ({rt.event_source_path})"
     as_of = event.event_date + timedelta(days=90)
 
-    parties = source.party(as_of)  # through the DataSource interface -- no file paths
-    prty_ids = sorted(parties["PRTY_ID"])
+    parties = canonical.read("Party", as_at=as_of)
+    prty_ids = sorted(parties["party_id"])
     print(f"\n[1/4] {len(prty_ids)} clients as of {as_of}; external event in scope: "
           f"{event.event_type} ({event.affected_sector}/{event.affected_country}, "
           f"EUR {event.estimated_value_eur:,.0f})")
     print(f"      event source: {event_source}")
 
     print("[2/4] Running the agentic pipeline for every client (batch mode, no LLM)...")
-    evaluations = evaluate_book(prty_ids, source=source, rules=rules, as_of=as_of, event=event)
+    evaluations = evaluate_book(prty_ids, source=source, rules=rules, as_of=as_of, event=event,
+                                binding_name=rt.binding_name or "fdm")
     n_signals = sum(len(e.signals) for e in evaluations)
     recommendations = dedupe([e.recommendation for e in evaluations if e.recommendation])
     print(f"      {n_signals} signals -> {len(recommendations)} recommendations after de-duplication")
 
     print("[3/4] Building the RM worklist...")
-    worklist = build_rm_worklist(recommendations, source, rules, as_of)
+    worklist = build_rm_worklist(recommendations, source, rules, as_of, binding_name=rt.binding_name or "fdm")
     by_category = Counter(worklist["nba_category"])
     total_revenue = worklist["indicative_revenue_eur"].dropna().sum()
     print(f"      by category: {dict(by_category)}")
@@ -106,11 +114,12 @@ def main():
     print("\n" + "=" * 78)
     print("PROOF -- positive vs. negative case for the external event")
     print("=" * 78)
-    same_scope = source.party_demographic().merge(source.party_locator(), on="PRTY_ID")
-    same_scope_ids = set(same_scope[
-        (same_scope["NACE_SECTION_CD"] == event.affected_sector)
-        & (same_scope["COUNTRY_CD"] == event.affected_country)
-    ]["PRTY_ID"])
+    # A binding without sector/country (legacy) yields an aligned all-empty
+    # series, so the proof below honestly reports zero same-scope clients
+    # instead of crashing on a misaligned indexer.
+    sector = parties["sector_code"] if "sector_code" in parties.columns else pd.Series("", index=parties.index)
+    country = parties["country_code"] if "country_code" in parties.columns else pd.Series("", index=parties.index)
+    same_scope_ids = set(parties[(sector == event.affected_sector) & (country == event.affected_country)]["party_id"])
     in_scope = [e for e in evaluations if e.prty_id in same_scope_ids]
     confirmed = [e for e in in_scope if e.exogenous_confirmed]
     unconfirmed = [e for e in in_scope if not e.exogenous_confirmed]
@@ -129,9 +138,10 @@ def main():
     print("\n" + "=" * 78)
     print("GOVERNANCE -- HIGH_RSK_CUST_IND suppression, checked across the whole book")
     print("=" * 78)
-    flagged = set(parties.loc[parties["HIGH_RSK_CUST_IND"] == "Y", "PRTY_ID"])
+    flagged = (set(parties.loc[parties["high_risk_flag"].fillna(False).astype(bool), "party_id"])
+               if "high_risk_flag" in parties.columns else set())
     flagged_recs = [r for r in recommendations if r.prty_id in flagged]
-    violations = [r for r in flagged_recs if r.nba_category in REVENUE_CATEGORIES]
+    violations = [r for r in flagged_recs if r.nba_category in revenue_categories()]
     print(f"\n  {len(flagged)} high-risk-flagged clients; {len(flagged_recs)} have a "
           f"recommendation; {len(violations)} carry a revenue category "
           f"({'PASS' if not violations else 'FAIL -- investigate'}).")

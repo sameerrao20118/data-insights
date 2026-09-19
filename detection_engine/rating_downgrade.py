@@ -21,7 +21,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
-REQUIRED_COLUMNS = ["PRTY_ID", "EFFECTIVE_START_DT", "EFFECTIVE_END_DT", "RSK_GRD_CD", "RSK_GRD_VAL"]
+REQUIRED_COLUMNS = ["party_id", "valid_from", "valid_to", "grade_code", "grade_value"]
 
 
 @dataclass(frozen=True)
@@ -52,11 +52,11 @@ DETECTION_COLUMNS = [
 def _version_at(versions: pd.DataFrame, when: pd.Timestamp) -> pd.Series | None:
     """The version valid at `when` -- EFFECTIVE_START_DT <= when AND
     (EFFECTIVE_END_DT is null OR EFFECTIVE_END_DT > when)."""
-    end = versions["EFFECTIVE_END_DT"]
-    valid = versions[(versions["EFFECTIVE_START_DT"] <= when) & (end.isna() | (end > when))]
+    end = versions["valid_to"]
+    valid = versions[(versions["valid_from"] <= when) & (end.isna() | (end > when))]
     if valid.empty:
         return None
-    return valid.sort_values("EFFECTIVE_START_DT").iloc[-1]
+    return valid.sort_values("valid_from").iloc[-1]
 
 
 def detect(party_versions: pd.DataFrame, config: DetectorConfig, run_id: str, as_of: date) -> pd.DataFrame:
@@ -67,33 +67,33 @@ def detect(party_versions: pd.DataFrame, config: DetectorConfig, run_id: str, as
         return pd.DataFrame(columns=DETECTION_COLUMNS)
 
     pv = party_versions.copy()
-    pv["EFFECTIVE_START_DT"] = pd.to_datetime(pv["EFFECTIVE_START_DT"])
-    pv["EFFECTIVE_END_DT"] = pd.to_datetime(pv["EFFECTIVE_END_DT"].replace("", pd.NA), errors="coerce")
+    pv["valid_from"] = pd.to_datetime(pv["valid_from"])
+    pv["valid_to"] = pd.to_datetime(pv["valid_to"].replace("", pd.NA), errors="coerce")
     now_ts, prior_ts = pd.Timestamp(as_of), pd.Timestamp(as_of - timedelta(days=config.lookback_days))
     stamp = datetime.now(timezone.utc).isoformat()
 
     out_rows = []
-    for prty_id, versions in pv.groupby("PRTY_ID", sort=False):
+    for prty_id, versions in pv.groupby("party_id", sort=False):
         # never look past as_of: versions starting later are invisible
-        versions = versions[versions["EFFECTIVE_START_DT"] <= now_ts]
+        versions = versions[versions["valid_from"] <= now_ts]
         current, prior = _version_at(versions, now_ts), _version_at(versions, prior_ts)
         if current is None or prior is None:
             continue
-        notches = int(current["RSK_GRD_VAL"]) - int(prior["RSK_GRD_VAL"])
+        notches = int(current["grade_value"]) - int(prior["grade_value"])
         if notches < config.min_notches:
             continue
         out_rows.append({
-            "detection_id": f"{config.rule_version}:rating_downgrade:{prty_id}:{current['EFFECTIVE_START_DT'].date().isoformat()}",
+            "detection_id": f"{config.rule_version}:rating_downgrade:{prty_id}:{current['valid_from'].date().isoformat()}",
             "rule_version": config.rule_version,
             "prty_id": prty_id,
             "event_date": as_of.isoformat(),
             "detection_as_of": stamp,
-            "prior_grade_cd": prior["RSK_GRD_CD"],
-            "prior_grade_val": int(prior["RSK_GRD_VAL"]),
-            "current_grade_cd": current["RSK_GRD_CD"],
-            "current_grade_val": int(current["RSK_GRD_VAL"]),
+            "prior_grade_cd": prior["grade_code"],
+            "prior_grade_val": int(prior["grade_value"]),
+            "current_grade_cd": current["grade_code"],
+            "current_grade_val": int(current["grade_value"]),
             "notches": notches,
-            "grade_effective_date": current["EFFECTIVE_START_DT"].date().isoformat(),
+            "grade_effective_date": current["valid_from"].date().isoformat(),
             "status": "detected",
         })
     return pd.DataFrame(out_rows, columns=DETECTION_COLUMNS)

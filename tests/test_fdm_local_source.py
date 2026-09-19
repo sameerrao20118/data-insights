@@ -89,7 +89,7 @@ def test_collateral_coverage_as_at_reflects_a_value_drop(source):
     counts = values.groupby("CLTRL_ITEM_ID").size()
     multi_id = counts[counts >= 2].index[0]
     versions = values[values["CLTRL_ITEM_ID"] == multi_id].sort_values("EFFECTIVE_START_DT")
-    v1, v2 = versions.iloc[0], versions.iloc[1]
+    v2 = versions.iloc[1]  # the second version's start is the change date; v1 is not needed
     change_date = date.fromisoformat(v2["EFFECTIVE_START_DT"])
 
     before = source.collateral_item_value(change_date - pd.Timedelta(days=1))

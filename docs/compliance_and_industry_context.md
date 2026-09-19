@@ -95,8 +95,8 @@ conclusion would need re-checking.
 
 ## What this means for the current build — no code changes needed, one thing to keep true
 
-Nothing here requires changing `detection_engine/external_macro_event.py`
-or `datainsights/worklist.py` — the design (legal-entity-level
+Nothing here requires changing `external_events/exposure_qualifier.py`
+or `datainsights/fdm_worklist.py` — the design (legal-entity-level
 sector/country matching, no PEP correlation, no individual credit
 scoring) already sits on the right side of both boundaries checked above.
 The thing worth actively *not* doing later: don't let a future detector

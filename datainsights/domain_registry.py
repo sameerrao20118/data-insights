@@ -1,10 +1,10 @@
 """
-Domain registry (data half): product codes, allowed RM actions, and
+Domain registry (data half): allowed RM actions, and
 per-endogenous-signal NBA category + hypothesis, loaded from
 config/domains_fdm.yaml -- the file docs/adding_a_new_domain.md points a
 new domain at. Read directly by agents/domain_agent.py (allowed_actions),
-datainsights/correlation/hypothesis.py (category_for/hypothesis_for), and
-agents/tools.py (product_codes), so none of the three needs a rules dict
+and datainsights/correlation/hypothesis.py (category_for/hypothesis_for), so
+neither needs a rules dict
 threaded through just for this.
 
 Deliberately self-loading (module-level default path, resolved lazily)
@@ -26,6 +26,7 @@ or hypothesis.py themselves. See docs/adding_a_new_domain.md.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from functools import lru_cache
 
 import yaml
@@ -62,28 +63,49 @@ def _domain(domain: str, path: str | None = None) -> dict:
     return config[domain]
 
 
+# R10: top-level keys that are NOT domains. `combinations` is the
+# cross-domain rules table (see the block at the end of domains_fdm.yaml).
+_RESERVED_KEYS = frozenset({"combinations"})
+
+
 def domain_names(path: str | None = None) -> tuple[str, ...]:
-    return tuple(_load(path).keys())
+    return tuple(k for k in _load(path).keys() if k not in _RESERVED_KEYS)
+
+
+@dataclass(frozen=True)
+class CombinationRule:
+    name: str
+    when: tuple[str, ...]
+    category: str
+    hypothesis: str
+    size_from: str | None = None
+
+
+def combination_rules(path: str | None = None) -> list[CombinationRule]:
+    """R10: the cross-domain rules, most specific first (longest `when`),
+    YAML order breaking ties."""
+    rules = []
+    for r in _load(path).get("combinations") or []:
+        missing = {"name", "when", "category", "hypothesis"} - set(r)
+        if missing:
+            raise ValueError(f"combination rule {r.get('name')!r} missing {sorted(missing)}")
+        rules.append(CombinationRule(name=r["name"], when=tuple(r["when"]), category=r["category"],
+                                     hypothesis=r["hypothesis"], size_from=r.get("size_from")))
+    return sorted(rules, key=lambda r: -len(r.when))
+
+
+def matching_combination(signal_types, path: str | None = None) -> CombinationRule | None:
+    """The first rule whose every `when` signal is present, or None --
+    a combination with no rule falls through to strongest-signal-wins."""
+    present = set(signal_types)
+    for rule in combination_rules(path):
+        if set(rule.when) <= present:
+            return rule
+    return None
 
 
 def allowed_actions(domain: str, path: str | None = None) -> tuple[str, ...]:
     return tuple(_domain(domain, path)["allowed_actions"])
-
-
-def product_codes(domain: str, group: str | None = None, path: str | None = None) -> list[str]:
-    """Agreement type codes for this domain, e.g. deposits -> ["DEP"],
-    lending's "facility" group -> ["LON", "ODR"]. `group` is required
-    when a domain declares more than one group (lending has both
-    "facility" and "mortgage" -- they're scoped to different tools, see
-    agents/tools.py); omit it for a single-group or ungrouped domain."""
-    codes = _domain(domain, path).get("product_codes") or {}
-    if not codes:
-        return []
-    if group is not None:
-        return list(codes.get(group, []))
-    if len(codes) == 1:
-        return list(next(iter(codes.values())))
-    raise ValueError(f"domain {domain!r} has multiple product_codes groups {list(codes)} -- pass group=")
 
 
 def _all_signals(path: str | None = None) -> dict:
@@ -93,7 +115,9 @@ def _all_signals(path: str | None = None) -> dict:
     here is safe -- a future collision would need domain-scoping, not
     hit yet."""
     flat: dict = {}
-    for spec in _load(path).values():
+    for name, spec in _load(path).items():
+        if name in _RESERVED_KEYS:
+            continue
         flat.update(spec.get("signals") or {})
     return flat
 
@@ -107,6 +131,20 @@ def hypothesis_for(signal_type: str, default: str = "Signal observed; reasoning 
     return _all_signals(path).get(signal_type, {}).get("hypothesis", default)
 
 
+def why_now_for(signal_type: str, default: str = "", path: str | None = None) -> str:
+    """The one-line 'why this client, this week' for the RM worklist (R2:
+    moved here from a Python dict in datainsights/fdm_worklist.py)."""
+    return _all_signals(path).get(signal_type, {}).get("why_now", default)
+
+
+def non_revenue_action_for(signal_type: str,
+                           default: str = "RM to review this signal -- no product offer.",
+                           path: str | None = None) -> str:
+    """Action text for a signal whose category never carries an offer (R2:
+    moved here from datainsights/correlation/hypothesis.py)."""
+    return _all_signals(path).get(signal_type, {}).get("non_revenue_action", default)
+
+
 def is_ambiguous(signal_type: str, path: str | None = None) -> bool:
     """A2 (docs/agentic_plan.md): whether this signal_type's category
     mapping is a disclosed simplification worth an investigator agent's
@@ -117,5 +155,21 @@ def is_ambiguous(signal_type: str, path: str | None = None) -> bool:
 def category_options(signal_type: str, path: str | None = None) -> list[str]:
     """The fixed set an investigator may propose between for this
     signal_type -- never free text, never a category outside this list.
-    Empty for a non-ambiguous signal_type (nothing to investigate)."""
-    return list(_all_signals(path).get(signal_type, {}).get("category_options", []))
+    Empty for a non-ambiguous signal_type (nothing to investigate).
+    config/domains_fdm.yaml's category_options is a mapping (category ->
+    {requires_evidence: ...}); this returns just the category names."""
+    opts = _all_signals(path).get(signal_type, {}).get("category_options", [])
+    return list(opts.keys()) if isinstance(opts, dict) else list(opts)
+
+
+def category_evidence_requirements(signal_type: str, path: str | None = None) -> dict[str, str]:
+    """category -> the name of the evidence predicate
+    (agents/investigator_agent.py's EVIDENCE_PREDICATES) that must hold
+    in a client's own tool results before an investigator may propose
+    that category for this signal_type. A category with no
+    `requires_evidence` entry is unconstrained beyond being one of
+    category_options() itself."""
+    opts = _all_signals(path).get(signal_type, {}).get("category_options", {})
+    if not isinstance(opts, dict):
+        return {}
+    return {cat: cfg["requires_evidence"] for cat, cfg in opts.items() if cfg and cfg.get("requires_evidence")}

@@ -17,8 +17,17 @@ from datetime import date
 
 import pytest
 
-from agents.investigator_agent import investigate, make_investigator_tools
+from agents.investigator_agent import (
+    EVIDENCE_PREDICATES,
+    InvestigationFields,
+    _validate,
+    investigate,
+    make_investigator_tools,
+)
 from datainsights.correlation.hypothesis import Recommendation
+from datainsights.domain_registry import category_evidence_requirements, category_options
+from datainsights.semantic.binding import load_binding
+from datainsights.semantic.canonical import CanonicalSource
 from datainsights.sources.fdm_local import FdmLocalSource
 from tests._stub_model import FailingModel
 
@@ -31,7 +40,10 @@ pytestmark = pytest.mark.skipif(not os.path.isdir(FDM_DIR), reason="FDM data not
 
 @pytest.fixture(scope="module")
 def source():
-    return FdmLocalSource(FDM_DIR, CONTRACT_PATH)
+    """Named `source` for minimal test-file churn; returns a
+    CanonicalSource -- investigator tools read through it now
+    (docs/generalization_plan.md Phase 1)."""
+    return CanonicalSource(FdmLocalSource(FDM_DIR, CONTRACT_PATH), load_binding("fdm"))
 
 
 def make_rec(**overrides):
@@ -81,6 +93,83 @@ def test_tools_are_scoped_to_one_client_only(source):
             assert "prty_id" not in sig.parameters
 
 
+# --- A2 consistency fix (docs/generalization_plan.md Phase 4) ------------
+# A live run once proposed HEDGING_NEED while its own reasoning said "no
+# multi-currency activity found" -- backwards. These tests prove the fix
+# deterministically, no Ollama needed: _validate() recomputes evidence in
+# Python and rejects a proposal whose predicate doesn't hold, regardless
+# of how plausible the model's prose sounds.
+
+def _fields(**overrides):
+    defaults = dict(proposed_category="HEDGING_NEED", reasoning="Some reasoning.",
+                    evidence_refs=["x"], could_not_determine="")
+    defaults.update(overrides)
+    return InvestigationFields(**defaults)
+
+
+def test_hedging_need_rejected_without_non_eur_activity():
+    """The exact backwards case a live run produced: HEDGING_NEED
+    proposed, but this client's own tool results show no non-EUR
+    currency activity at all."""
+    tool_results = {"get_currency_exposure": {"currencies_seen": ["EUR"], "non_eur_currencies": []},
+                    "get_recent_balance_trend": {"status": "ok", "direction": "flat_or_falling"}}
+    problems = _validate(_fields(proposed_category="HEDGING_NEED"),
+                         category_options("fixed_rate_expiry"),
+                         category_evidence_requirements("fixed_rate_expiry"), tool_results)
+    assert any("requires evidence" in p and "non_eur_currency_activity" in p for p in problems)
+
+
+def test_hedging_need_accepted_with_genuine_non_eur_activity():
+    tool_results = {"get_currency_exposure": {"currencies_seen": ["EUR", "USD"], "non_eur_currencies": ["USD"]},
+                    "get_recent_balance_trend": {"status": "ok", "direction": "flat_or_falling"}}
+    problems = _validate(_fields(proposed_category="HEDGING_NEED"),
+                         category_options("fixed_rate_expiry"),
+                         category_evidence_requirements("fixed_rate_expiry"), tool_results)
+    assert problems == []
+
+
+def test_treasury_opportunity_rejected_without_rising_balance():
+    tool_results = {"get_currency_exposure": {"currencies_seen": ["EUR"], "non_eur_currencies": []},
+                    "get_recent_balance_trend": {"status": "ok", "direction": "flat_or_falling"}}
+    problems = _validate(_fields(proposed_category="TREASURY_OPPORTUNITY"),
+                         category_options("fixed_rate_expiry"),
+                         category_evidence_requirements("fixed_rate_expiry"), tool_results)
+    assert any("requires evidence" in p and "balance_rising" in p for p in problems)
+
+
+def test_treasury_opportunity_accepted_with_rising_balance():
+    tool_results = {"get_currency_exposure": {"currencies_seen": ["EUR"], "non_eur_currencies": []},
+                    "get_recent_balance_trend": {"status": "ok", "direction": "rising"}}
+    problems = _validate(_fields(proposed_category="TREASURY_OPPORTUNITY"),
+                         category_options("fixed_rate_expiry"),
+                         category_evidence_requirements("fixed_rate_expiry"), tool_results)
+    assert problems == []
+
+
+def test_category_not_in_options_still_rejected_first():
+    problems = _validate(_fields(proposed_category="RISK_REVIEW"),
+                         category_options("fixed_rate_expiry"),
+                         category_evidence_requirements("fixed_rate_expiry"), {})
+    assert any("not in" in p for p in problems)
+
+
+def test_a_category_with_no_requires_evidence_entry_is_unconstrained():
+    """Not every category_options entry has to declare a predicate --
+    one with none is validated only on membership/banned-terms/reasoning,
+    same as before this fix existed."""
+    problems = _validate(_fields(proposed_category="TREASURY_OPPORTUNITY"), ["TREASURY_OPPORTUNITY"],
+                         {}, {})  # no evidence_requirements at all
+    assert problems == []
+
+
+def test_evidence_predicates_registry_matches_domains_fdm_yaml():
+    """Every predicate name config/domains_fdm.yaml references must
+    actually be registered -- a typo here would silently disable the
+    whole check (KeyError caught nowhere), not fail loudly."""
+    for predicate_name in category_evidence_requirements("fixed_rate_expiry").values():
+        assert predicate_name in EVIDENCE_PREDICATES
+
+
 # --- fallback discipline (no Ollama needed) -------------------------------
 
 def test_model_failure_returns_needs_review_note_never_raises(source):
@@ -113,7 +202,7 @@ def _ollama_reachable() -> bool:
 def test_live_investigation_proposes_a_valid_category(source):
     from agents.model_factory import ModelConfig, get_model
 
-    model = get_model(ModelConfig(mode="local", model_id="qwen2.5:7b"))
+    model = get_model(ModelConfig(mode="local"))
     note = investigate(make_rec(), source, model, date(2025, 10, 4))
 
     assert note is not None
@@ -123,3 +212,12 @@ def test_live_investigation_proposes_a_valid_category(source):
     # The hard boundary, not a specific proposal: whatever it proposed,
     # it must be one of the two registered options -- never invented.
     assert note.proposed_category in ("TREASURY_OPPORTUNITY", "HEDGING_NEED")
+    # Not asserting a specific outcome -- but IF this ever degrades to
+    # needs_review, it must be for the real reason the A2 fix exists
+    # (docs/generalization_plan.md Phase 4): a live run repeatedly
+    # proposed HEDGING_NEED for PRTY00001 despite this client's own
+    # currency exposure showing no non-EUR activity at all, caught every
+    # time by the evidence-consistency check, never by a coincidental
+    # unrelated failure.
+    if note.status == "needs_review":
+        assert "requires evidence" in note.could_not_determine

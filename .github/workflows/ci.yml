@@ -1,0 +1,67 @@
+# R16 (docs/refactor_plan.md §6d). Before this file existed, the 483-test
+# suite ran only when a human remembered to run it.
+#
+# What CI can and cannot verify, honestly:
+#   - It regenerates every dataset the suite needs (all deterministic,
+#     seconds each). None of the generated data is committed.
+#   - It has NO Ollama, so every live-LLM test is deselected (-k "not
+#     live") -- exactly the local convention.
+#   - It has NO SBA data (a 450 MB public download); those tests skip
+#     themselves when the directory is absent, by design.
+#   - Nothing here touches Snowflake, AWS, or any credential. If it ever
+#     needs to, that is a separate, authorised workflow -- see CLAUDE.md.
+
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff==0.16.8
+      # The gate is pyflakes + syntax errors (ruff.toml). Widening it is a
+      # deliberate, separate change -- never in the same commit as a fix.
+      - run: ruff check .
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OLLAMA_NO_CLOUD: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: Generate the legacy-schema dataset (config/bindings/legacy.yaml)
+        run: |
+          python -m data_generator.generate_data
+
+      - name: Generate the FDM dataset (dev + holdout + events)
+        run: |
+          python -m data_generator.fdm.generate_fdm --seed 42
+          python -m data_generator.fdm.generate_fdm --seed 1337
+          python -m data_generator.fdm.generate_fdm_events
+
+      - name: Deterministic suite (no Ollama, no SBA, no cloud)
+        run: python -m pytest tests/ -q -k "not live" --durations=10
+
+      # Guard against the class of bug M17 found: a test whose name contains
+      # "live" is silently deselected above. If the deselected count ever
+      # grows without a matching new live test, someone will see it here.
+      - name: Report what was deselected
+        run: python -m pytest tests/ -q -k "not live" --collect-only 2>/dev/null | tail -3

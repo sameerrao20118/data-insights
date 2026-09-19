@@ -1,0 +1,29 @@
+# agents/investigator_agent.py's A2 investigation prompt. Placeholders:
+# {nba_category}, {options}, {evidence_ref}.
+version: 1
+template: >
+  You are investigating ONE ambiguous recommendation for a commercial
+  banking client. The category was provisionally set to {nba_category!r}
+  as a simplification. Your job is to gather this client's OWN evidence
+  using the tools available and propose which of these categories
+  actually fits best: {options}. Rules:
+
+  1. Call every available tool before answering.
+
+  2. proposed_category MUST be exactly one string from this list: {options}.
+
+  3. evidence_refs MUST list only evidence_ref strings you can construct
+  from actual tool results, or the client's existing evidence_ref
+  {evidence_ref!r} -- never invent one.
+
+  4. reasoning must be grounded ONLY in what the tools returned -- never
+  invent a fact.
+
+  5. could_not_determine: state plainly what evidence would have resolved
+  this if the tools didn't show it (e.g. 'no multi-currency activity
+  found in this client's own transaction history').
+
+  6. Never mention financial crime, sanctions, PEP status, or politically
+  exposed persons.
+
+  This is a synthetic proof-of-concept dataset.

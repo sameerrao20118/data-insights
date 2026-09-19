@@ -319,7 +319,7 @@ recommendation rather than a fact, it says so.
 | In-memory compute | **pandas 3 + numpy** inside the detectors | Same code; for thousands of clients, per-agreement parallelism (multiprocessing) first, **Snowpark/Spark** only if needed | Detectors are per-agreement and embarrassingly parallel. Rewriting them in Spark before a real dataset demands it is the "framework without evidence" mistake CLAUDE.md warns against. |
 | Schema/contract | `config/entities_fdm.yaml` + `config/domains_fdm.yaml` (YAML, validated in code) | Same files | One contract drives generator, sources, detectors, agents. |
 | Events (A1) | CSV table of validated `ExogenousEvent`s, read by a plain function (`extracted_event_store.read_extracted_events()`), not a typed interface | Snowflake table, or S3+Athena | Shape matches `exposure_qualifier.load_events()` today, but nothing enforces that beyond convention — see the correction in §2's A1 section. |
-| Profiling/exploration | DuckDB SQL + pandas in notebooks or the Streamlit **Data sources** page | Snowflake worksheets | Nothing extra to install. |
+| Profiling/exploration | DuckDB SQL + pandas in notebooks or the Streamlit **Explore a source** page | Snowflake worksheets | Nothing extra to install. |
 
 **Answer to "which tool understands the data":** DuckDB for querying,
 pandas for transformation, the YAML contracts for meaning. No Spark, no

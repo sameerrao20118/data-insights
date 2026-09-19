@@ -28,6 +28,19 @@ class CanonicalSource:
     def __init__(self, source, binding: Binding):
         self.source = source
         self.binding = binding
+        # R13 (docs/refactor_plan.md §6b): the whole-book path used to
+        # re-assemble, re-project and boolean-mask the FULL entity on every
+        # per-client read() -- O(clients x rows), measured at 2.4M rows
+        # re-merged for 60 clients on a 22k-row set. Now the projected,
+        # as-at-collapsed frame is built once per (concept, as_at) and a
+        # party_id/account_id slice is a position lookup. Caches live on
+        # the instance: a book run shares ONE CanonicalSource
+        # (agents/orchestrator.evaluate_book), a long-lived process
+        # sweeping many as-of dates constructs a fresh one per sweep.
+        # Safe to hand out cached frames because pandas >= 3 is
+        # copy-on-write: a caller assigning a column gets its own copy.
+        self._frame_cache: dict[tuple, pd.DataFrame] = {}
+        self._index_cache: dict[tuple, dict] = {}
 
     def available(self, concept: str) -> bool:
         cb = self.binding.concepts.get(concept)
@@ -98,20 +111,53 @@ class CanonicalSource:
         against canonical columns so it works for ANY DataSource, not
         just one with its own as_at() method."""
         cb = self._require(concept)
-        physical = self._assemble(cb)
-        out = self._project(cb, physical)
+        out = self._frame(concept, cb, as_at)
 
+        if party_id is not None and "party_id" in out.columns:
+            out = self._slice(concept, as_at, out, "party_id", party_id)
+        if account_id is not None and "account_id" in out.columns:
+            out = self._slice(concept, as_at, out, "account_id", account_id)
+        if out is self._frame_cache.get((concept, as_at)):
+            # Unfiltered read: never hand out the cached object itself -- a
+            # caller's column assignment would land in the cache. A shallow
+            # copy under copy-on-write shares the data until written.
+            out = out.copy(deep=False)
+        return out
+
+    def _frame(self, concept: str, cb: ConceptBinding, as_at: date | None) -> pd.DataFrame:
+        """The whole-book projected frame for (concept, as_at), built once."""
+        key = (concept, as_at)
+        cached = self._frame_cache.get(key)
+        if cached is not None:
+            return cached
+        out = self._project(cb, self._assemble(cb))
         if cb.bitemporal and as_at is not None:
             ts = pd.Timestamp(as_at)
             mask = (out["valid_from"] <= ts) & (out["valid_to"].isna() | (out["valid_to"] > ts))
             out = out[mask]
             out = out.drop(columns=["valid_from", "valid_to"])  # collapsed to one row per key -- redundant now
+        out = out.reset_index(drop=True)
+        self._frame_cache[key] = out
+        return out
 
-        if party_id is not None and "party_id" in out.columns:
-            out = out[out["party_id"] == party_id]
-        if account_id is not None and "account_id" in out.columns:
-            out = out[out["account_id"] == account_id]
-        return out.reset_index(drop=True)
+    def _slice(self, concept: str, as_at: date | None, frame: pd.DataFrame,
+               col: str, value) -> pd.DataFrame:
+        """frame[frame[col] == value] as a position lookup: the groupby
+        index is built once per (concept, as_at, col), then every client
+        is O(its own rows), not O(the book). Only used on the cached
+        whole-book frame, whose row positions are stable."""
+        key = (concept, as_at, col)
+        index = self._index_cache.get(key)
+        if index is None:
+            index = frame.groupby(col, sort=False).indices if len(frame) else {}
+            self._index_cache[key] = index
+        positions = index.get(value)
+        if positions is None or frame is not self._frame_cache.get((concept, as_at)):
+            # value absent (empty result), or a frame already narrowed by a
+            # previous filter (party_id then account_id) -- fall back to a
+            # mask over what is left, which is already small.
+            return frame[frame[col] == value].reset_index(drop=True)
+        return frame.iloc[positions].reset_index(drop=True)
 
     def versions(self, concept: str, *, party_id: str | None = None,
                  account_id: str | None = None) -> pd.DataFrame:

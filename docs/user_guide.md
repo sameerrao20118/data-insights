@@ -25,13 +25,13 @@ there.
 - [Ollama](https://ollama.com) installed and running locally, with at least
   these two models pulled (used by config/rules.yaml):
   ```bash
-  ollama pull qwen2.5:7b     # narrator
+  ollama pull qwen2.5:7b     # narrator -- the id in config/profiles/<profile>.yaml llm.model
   ollama pull llama3.1:8b    # judge (deliberately a different model)
   ```
   Verify it's running: `curl http://127.0.0.1:11434/api/tags` should return
   a model list, not a connection error.
 - Nothing else. No Snowflake account, no API keys, no internet access
-  needed for the default (`offline_ollama`) profile.
+  needed for the default (`fdm_local`) profile.
 
 ## 2. Setup
 
@@ -60,96 +60,98 @@ python data_generator/generate_data.py --seed 1337 --out-dir data_generator/outp
 You don't need to re-run this unless you want a different dataset — the
 committed pipeline already ran against the default (seed 42) dataset.
 
-## 4. Run the full pipeline
+## 4. Run the pipeline (one pipeline, any bound schema)
 
 ```bash
-python -m datainsights.cli
+python -m agents.demo_fdm_scenario                          # whole book, no LLM, ~5 s for 60 clients
+python -m agents.demo_fdm_scenario --profile legacy_local   # the SAME pipeline on the legacy schema (606 clients)
+python -m agents.demo_fdm_scenario --profile sba_local      # ... and on real SBA entities (400 clients)
+python -m agents.demo_multiagent_scenario                   # one client, live local-Ollama narration + Tier-2 investigation
 ```
 
-This reads transactions → runs the detector → applies cooldown → ranks →
-generates a narrative for the top 15 detections (via local Ollama, with a
-deterministic-template fallback if Ollama is unreachable or its output
-fails validation) → persists everything to `var/state.sqlite` → writes a
-digest to `var/insights/digest_<run_id>.md`.
+R23 retired the original CLI (`datainsights.cli`, `build_worklist`,
+`external_events.demo_scenario`); everything now runs through
+`agents/orchestrator.py`: every registered detector in every domain per
+client, canonical reads through the schema's binding, cross-domain rules,
+exogenous confirmation, one assembled recommendation. Batch runs are
+deterministic and need no model. Outputs: `var/insights/fdm_rm_worklist.csv`
+(the RM's ranked list), `var/insights/fdm_rm_digest.md` (the same rows as
+prose), `var/insights/fdm_insights.json` (MIMO-shaped, never sent).
 
-**Useful flags:**
-```bash
-python -m datainsights.cli --as-of 2024-06-30      # evaluate as of a different date
-                                                     # (only transactions on/before
-                                                     # this date are visible)
-python -m datainsights.cli --max-narratives 5       # fewer/more LLM calls
-python -m datainsights.cli --no-narratives          # fast, detector+ranking only,
-                                                     # skips all Ollama calls
-python -m datainsights.cli --profile snowflake_trial_ollama   # NOT RUN yet --
-                                                     # will fail closed unless you've
-                                                     # set the SNOWFLAKE_POC_* env vars
-                                                     # (see section 7)
-```
-
-Re-running with the same `--as-of` is safe and idempotent: no duplicate
-active detections get created, and narratives already generated are served
-from cache (fast — seconds instead of ~1 minute).
+The as-of date is the event's date + 90 days for the demo; the whole
+pipeline is point-in-time correct — nothing after as-of is visible to any
+detector (`tests/test_set_based_book_evaluation.py`, `tests/test_correlation.py`).
 
 ## 5. Read the output
 
 ```bash
-ls var/insights/                      # one digest .md per run
-cat var/insights/digest_<run_id>.md   # ranked recommendations with evidence,
-                                        # narrative, and caveats
+cat var/insights/fdm_rm_digest.md      # ranked recommendations: why now, hypothesis, sized action, talking point
+head -5 var/insights/fdm_rm_worklist.csv
 ```
 
-Each entry shows: rank, score, the flagged transaction's evidence
-(amount, baseline, date), an "observed facts" / "interpretation" /
-"suggested action" narrative, and caveats. Every entry says explicitly
-this is synthetic POC output, not a real business conclusion.
+Every row carries: category (`config/categories.yaml`), hypothesis and
+why-now (`config/domains_fdm.yaml`), a sized offer in the account's own
+currency with its `sizing_basis`, indicative revenue (illustrative
+planning assumptions from `config/rules.yaml`), the confirming domains,
+the evidence reference, and `relationship_manager_id` for entitlement.
+§5b below is the RM's reading guide.
 
-## 6. Check status, run the judge, run evaluation
+## 6. Tests, guards and the evaluator
 
 ```bash
-python -m datainsights.status              # last run, active detection count, cache stats
-python -m datainsights.judge.run_sample 10 # offline semantic judge on 10 cached narratives
-python -m evaluation.evaluate               # dev-diagnostic precision/recall
-python -m pytest tests/ -v                  # detector + macro-event test suite (16 cases)
+python -m pytest tests/ -q -k "not live"     # deterministic suite, no Ollama (~700 tests, ~1 min)
+python -m pytest tests/ -q                    # + live tests (local Ollama must be up)
+python -m ruff check .                        # the lint gate CI runs
+python -m evaluation.evaluate                 # legacy ground-truth evaluator -- no producer since R23; replaced by R18
 ```
 
-**Read the judge and evaluation output critically, not as a pass/fail
-badge** — both modules print explicit caveats about what the numbers do
-and don't mean (contaminated development session, correlated narrator/
-judge models). That's intentional, not boilerplate to skip past.
+The suite is the product's guard rail: config fields must have readers,
+categories/rules/packs must be declared, no physical column name may
+leak above the semantic layer, no model id may live outside a profile,
+every dashboard page must render.
 
-## 6b. Run the exogenous (market/political event) pipeline
+## 6b. Exogenous events
 
-Step 4 above only reacts to a client's own transactions. A second,
-parallel pipeline reacts to external market/political/industry events —
-rate changes, tenders, sanctions, disasters — matched to clients by
-sector/country. See `docs/architecture.md` ("Second pipeline: exogenous
-events") for how it's wired.
+External events are one declarative registry — `config/event_types.yaml`
+— and one feed per schema (`external_events/output_fdm/tender_events.csv`,
+generated by `python -m data_generator.fdm.generate_fdm_events`). An
+event only reaches a client when that client's OWN data confirms
+exposure (`external_events/exposure_qualifier.py`); a confirmed event can
+override the hypothesis and size the offer from the event's own value.
+`docs/adding_a_new_domain.md` and `external_events/README.md` cover
+adding an event type (YAML only).
+
+## 6c. The worklist and who may see it
+
+The worklist is scoped **server-side** from the signed-in principal
+(`datainsights/identity.py`, R21): an RM sees only their own
+`relationship_manager_id` rows, a supervisor the whole book. The demo
+profile signs in a supervisor; to look as one RM without editing config:
 
 ```bash
-python -m external_events.simulate_external_events   # regenerate the simulated event feed
-python -m external_events.demo_scenario               # detect -> rank -> narrate -> digest
+DATAINSIGHTS_ROLE=rm DATAINSIGHTS_RM_IDS=RM001 streamlit run dashboard/app.py
 ```
 
-Writes its own digest to `var/insights/digest_external_macro_demo_*.md`.
-Same idempotency/caching behavior as Step 4.
+The bank's identity provider is a declared, NOT RUN contract
+(`identity.provider: idp`).
 
-## 6c. Build the unified RM worklist
-
-One row per client, tagging every recommendation (from either pipeline)
-with a category (`FINANCING_NEED`, `TREASURY_OPPORTUNITY`, `RISK_REVIEW`,
-`ADVISORY_ONLY`, `HEDGING_NEED`, `CAPEX_FINANCING`) and the evidence
-behind it:
+## 6e. Runs on a clock, and the outcome backtest
 
 ```bash
-python -m datainsights.build_worklist
+python -m datainsights.runs --profile fdm_local            # one recorded, locked, INCREMENTAL run (var/runs.db)
+python -m datainsights.runs --profile fdm_local --full     # ignore the watermark, re-evaluate everyone
+python -m datainsights.monitor --profile fdm_local --once  # one clock tick; set monitor.enabled: true and drop --once to loop
+python -m datainsights.backtest --profile fdm_local --start 2025-07-15 --end 2025-10-04 --step-days 30
 ```
 
-Writes `var/insights/worklist_<timestamp>.csv`. This is the file an RM
-would actually work from — see `docs/artifacts/output-reference.html`
-for real column-by-column examples and what each category means.
-
-**Or run everything above in one shot:** `./run_demo.sh` — tests, both
-pipelines, evaluation, and the worklist, in sequence.
+An incremental run re-evaluates only clients with a canonical row newer
+than the previous run's high-water mark, clients a newly ingested
+exogenous event qualifies (`python -m external_events.ingest_notices`),
+and clients whose carried recommendation is older than the longest
+cooldown; everyone else is carried forward. Two overlapping runs cannot
+corrupt state (`monitor.max_concurrent_runs`). The backtest is the
+question a credit committee asks: as of T, what did we recommend, and
+what did RMs record afterwards?
 
 ## 6d. The demo dashboard (recommended for showing this to someone)
 
@@ -162,16 +164,30 @@ no new detection/ranking/narrative logic lives in it.
 streamlit run dashboard/app.py
 ```
 
-Opens at `http://localhost:8501`. Sections: Overview, Data sources (real
-previews of both the internal CSVs and the simulated external events,
-plus the local-vs-Snowflake comparison), Run the pipeline (buttons that
-call the same modules as Step 4/6b/6c), Worklist (filterable, with a
-per-recommendation detail view), Digests, Technique reference (where
-statistical/rule-based/LLM logic sits), and Status. Everything on the
-Data sources / Worklist / Digests / Status tabs works read-only against
-whatever's already in `var/` and `data_generator/output/` — you don't
-have to click "run" first. This is a demo viewer, not the RM review/
-tracking system named as a future gap in `docs/gap_analysis.md`.
+Opens at `http://localhost:8501`. The sidebar is organised by what you
+want to DO, not by which phase built it:
+
+| Tab | Use it to |
+|---|---|
+| **Overview** | See the five pipeline stages in one screen |
+| **Explore a source** | **The main RM view.** Pick a data source; browse its actual tables and previews; trace one client through every stage; run the whole book and read the worklist, filtered by **My RM code** |
+| **Onboard a source** | Add a new data asset: profile → propose → review → human-accept. The only screen that writes to `config/` |
+| **ML opportunities** | Scan a schema for ML-eligible measures, set policy, run champion vs. challenger (see `docs/ml_quickstart.md`) |
+| **How it works** | The agent-flow diagram for one client |
+| **AWS target architecture** | The intended AgentCore shape (nothing here is deployed), plus the local-vs-Snowflake comparison of what changes when a real warehouse is wired in |
+| **Verification proofs** | Run the real proof tests live (second schema, real-data schema, second event type, AI evidence check) |
+| **Digests** | The markdown digest output |
+| **Technique reference** | Which stage is statistical vs. rule-based vs. LLM, and why |
+| **Status** | Last run, detection counts, cache stats |
+
+Data sources / Explore a source / Digests / Status work read-only against
+whatever is already in `var/` and `data_generator/` — you don't have to
+click "run" first. **But note:** the worklist you see is whatever was
+last written to `var/insights/`. After changing config or regenerating
+data, re-run `python -m agents.demo_fdm_scenario` or the tab's own run
+button, or you'll be reading a stale artifact. This is a demo viewer,
+not the RM review/tracking system named as a future gap in
+`docs/gap_analysis.md`.
 
 ## 7. Wiring Snowflake (optional, when you're ready)
 
@@ -183,7 +199,7 @@ own file: **[`snowflake_setup.md`](snowflake_setup.md)**.
 
 Short version once that's done:
 ```bash
-python -m datainsights.cli --profile snowflake_trial_ollama
+python -m agents.demo_fdm_scenario --profile snowflake_trial_ollama   # NOT RUN: source.backend=snowflake raises until a profile can construct it (R5)
 ```
 Without the env vars set, this profile fails closed with a clear error
 naming exactly which variable is missing — it will never silently fall
@@ -206,4 +222,4 @@ the effect.
 | Narrative source shows `deterministic_template (ollama fallback: ...)` | Ollama wasn't reachable, timed out, or its output failed validation — the reason is in the string. Check `ollama list` / that the app is running. |
 | `EnvironmentError: Snowflake connection 'poc' is not configured` | Expected — you haven't set the `SNOWFLAKE_POC_*` env vars. See section 7. |
 | Pydantic `ValidationError` on profile load | Someone edited a profile YAML to something the safety validators reject (e.g. a `-cloud` model tag, a non-localhost `base_url`, `paid_llm_calls_allowed: true`) — this is by design, not a bug. |
-| `python -m datainsights.cli` reruns don't regenerate narratives | Also by design — narrative cache is keyed by evidence hash + model + prompt version. Delete `var/state.sqlite` to force a clean slate if you really want that. |
+| Narration looks unchanged on rerun | Narration is validated against the tool evidence and cached per recommendation in `var/agent_traces.db`; delete it to force a clean slate. |

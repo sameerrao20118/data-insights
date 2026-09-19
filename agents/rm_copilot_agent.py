@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from pydantic import BaseModel
 
 from agents.domain_agent import BANNED_TERMS
+from datainsights.prompts import load_prompt
 
 # Fields an RM might ask about -- everything else in the row (rank,
 # segment, evidence_ref, sizing_basis, ...) is fair game as context but
@@ -99,19 +100,8 @@ def ask(question: str, row: dict, model) -> CopilotAnswer:
     """`row` is one dict from the RM worklist CSV (or equivalent) -- the
     ONLY data this function's model call can see. Never raises."""
     context_lines = "\n".join(f"- {k}: {row[k]}" for k in CONTEXT_FIELDS if k in row and row[k] not in (None, ""))
-    system_prompt = (
-        "You are answering a relationship manager's question about ONE client "
-        "recommendation, using ONLY the facts below. Rules:\n"
-        "1. Use ONLY these facts -- never invent a number, a client detail, or "
-        "any fact not listed here.\n"
-        "2. If the question asks about something not in these facts, say so "
-        "plainly -- do not guess or extrapolate.\n"
-        "3. Every number in your answer must come from these facts.\n"
-        "4. Never mention financial crime, sanctions, PEP status, or politically "
-        "exposed persons.\n"
-        "5. Keep the answer to 2-3 sentences.\n"
-        f"Facts about this recommendation:\n{context_lines}"
-    )
+    template, _prompt_version = load_prompt("rm_copilot_agent")
+    system_prompt = template.format(context_lines=context_lines)
     try:
         from strands import Agent
 

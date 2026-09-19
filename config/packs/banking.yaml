@@ -1,0 +1,20 @@
+# Domain pack -- R4 (docs/refactor_plan.md; docs/hardcoding_audit.md §4).
+# A pack names the coherent set a deployment turns on: which canonical
+# concepts (config/semantic_model.yaml), which detectors (signal types
+# in config/domains_*.yaml), which categories (config/categories.yaml)
+# and which rules/domain files carry the defaults. datainsights/packs.py
+# loads it; tests/test_domain_pack.py fails the build if a pack names
+# anything the registries do not declare. A second pack (say `insurance`)
+# is a second file here plus its own concepts/detectors -- the platform
+# code does not change.
+name: banking
+description: Commercial/institutional banking -- deposits, lending, risk, exogenous events.
+semantic_model_ref: config/semantic_model.yaml
+domains_ref: config/domains_fdm.yaml
+categories_ref: config/categories.yaml
+rules_ref: config/rules.yaml
+event_types_ref: config/event_types.yaml
+concepts: [Party, Account, BalanceObservation, Transaction, RiskGradeVersion, PartyMetricVersion, CollateralValuation]
+detectors: [cash_buildup, dormancy, revenue_pattern_change, large_incoming_payment, facility_utilization_spike,
+            facility_maturity_approaching, fixed_rate_expiry, collateral_coverage_drop, rating_downgrade]
+categories: [FINANCING_NEED, TREASURY_OPPORTUNITY, HEDGING_NEED, CAPEX_FINANCING, RISK_REVIEW, ADVISORY_ONLY]

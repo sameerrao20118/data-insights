@@ -139,7 +139,8 @@ handoff silently until an end-to-end test caught it). If the domain has
 no detector at all (like Exogenous), wrap whatever deterministic function
 answers its question instead — see `make_exogenous_tools` wrapping
 `exposure_qualifier.qualifies()`. Product/agreement type codes (`DEP`,
-`LON`/`ODR`, ...) come from `datainsights.domain_registry.product_codes()`,
+`LON`/`ODR`, ...) are NOT looked up from config -- the tool factory filters on the
+canonical `product_class` the binding derives (`deposit`/`facility`/`mortgage`),
 not an inline list — see step 6a.
 
 Then, at the bottom of `agents/tools.py`, one `register()` call
@@ -169,8 +170,6 @@ This is the "data" half — no Python file to edit. Add a block to
 
 ```yaml
 <domain>:
-  product_codes:
-    <group>: [CODE, ...]        # step 5's product_codes() lookup reads this
   allowed_actions:
     - "RM to ..."
     - "No action -- monitor only"   # every domain's list ends here
@@ -193,6 +192,69 @@ imported with no `agents.*` import in the chain at all, as
 already suppresses revenue categories whenever any `RISK_REVIEW`-mapped
 signal or `HIGH_RSK_CUST_IND=Y` is present, generically, for every
 domain.
+
+## 6b. Adding a category (`config/categories.yaml`) — no Python
+
+Since R2 (`docs/refactor_plan.md`) a category is one YAML entry, read by
+`datainsights/category_registry.py`. Nothing in `hypothesis.py`,
+`fdm_worklist.py`, `worklist.py` or `dashboard/app.py` names a category
+literally any more (`tests/test_category_registry.py` enforces the
+dashboard half; `tests/test_no_source_specific_coupling.py` is the
+pattern to extend if that ever regresses).
+
+```yaml
+categories:
+  SUPPLY_CHAIN_FINANCE:
+    label: Supply Chain Finance
+    description: Likely needs receivables/payables financing   # dashboard card
+    colour: "#336699"
+    revenue_model: financing        # financing | treasury | hedging | none
+    revenue_mechanism: Discount margin on financed invoices.  # worklist column
+    talking_point: Ask about supplier payment terms.          # worklist column
+```
+
+Then map at least one signal to it in `config/domains_*.yaml` (§6) —
+optionally with a per-signal `why_now:` line (revenue categories) or a
+`non_revenue_action:` line (`revenue_model: none`). That is the whole
+change: `assemble()` returns the new category, rule 1 suppresses it on a
+high-risk flag because it asks the registry *is this a revenue
+category?* rather than a literal set, the worklist sizes revenue with
+the formula `revenue_model` names (rates in `config/rules.yaml`
+`fdm_revenue_model`), and the dashboard's category card appears.
+`revenue_model: none` means *never sized* — RISK_REVIEW and
+ADVISORY_ONLY are the shipped examples. A category referenced by any
+config file but not declared here fails
+`tests/test_category_registry.py`, not silently in an RM's worklist.
+
+## 6c. Adding a cross-domain rule (`combinations:` in `config/domains_fdm.yaml`) — no Python
+
+Since R10 (`docs/refactor_plan.md`) two signals together can mean
+something one alone does not. Before, cross-domain linking was counting
+(+1 confidence per extra domain) and the strongest single signal always
+picked the category. A rule:
+
+```yaml
+combinations:
+  - name: growth_outrunning_working_capital
+    when: [cash_buildup, facility_utilization_spike]   # ALL must be present
+    category: FINANCING_NEED
+    size_from: facility_utilization_spike               # optional: whose figures size the offer
+    hypothesis: >-
+      Deposits are building while the facility is drawn harder -- growth is
+      outrunning working capital; the conversation is headroom, not surplus.
+```
+
+`assemble()` consults the table before strongest-signal-wins; the most
+specific matching rule (longest `when`) fires, YAML order breaks ties, a
+combination with no rule falls through unchanged. Rule 1 (risk
+suppression) still applies *after* a rule, so no combination can
+out-rank a `RISK_REVIEW` signal or the high-risk flag. The fired rule's
+name is on `Recommendation.combination_rule` and shown in the Trace tab's
+Stage 4. `tests/test_combination_rules.py` validates every rule's
+signals exist and `size_from` is one of `when`. Write rules for
+combinations that actually occur in your data — measure first (the
+shipped rules are the ones that fire on the generated FDM books, plus
+the two worked examples from `docs/hardcoding_audit.md` §6).
 
 ## 7. What must never change when adding a domain
 

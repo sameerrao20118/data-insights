@@ -15,7 +15,7 @@ from datetime import date, datetime, timezone
 
 import pandas as pd
 
-REQUIRED_COLUMNS = ["PRTY_ID", "AGRMNT_ID", "FIN_EVNT_PSTD_DT"]
+REQUIRED_COLUMNS = ["party_id", "account_id", "posted_at"]
 
 
 @dataclass(frozen=True)
@@ -58,9 +58,9 @@ def detect(events: pd.DataFrame, agreement_ids: list, config: DetectorConfig,
         prty_by_agrmnt = {}
     else:
         ev = events.copy()
-        ev["FIN_EVNT_PSTD_DT"] = pd.to_datetime(ev["FIN_EVNT_PSTD_DT"])
-        last_by_agrmnt = ev.groupby("AGRMNT_ID")["FIN_EVNT_PSTD_DT"].max()
-        prty_by_agrmnt = ev.drop_duplicates("AGRMNT_ID").set_index("AGRMNT_ID")["PRTY_ID"].to_dict()
+        ev["posted_at"] = pd.to_datetime(ev["posted_at"])
+        last_by_agrmnt = ev.groupby("account_id")["posted_at"].max()
+        prty_by_agrmnt = ev.drop_duplicates("account_id").set_index("account_id")["party_id"].to_dict()
 
     for agrmnt_id in agreement_ids:
         if agrmnt_id not in last_by_agrmnt.index:

@@ -1,7 +1,7 @@
-# Domain registry (data): product codes, allowed RM actions, and
+# Domain registry (data): allowed RM actions, and
 # per-endogenous-signal NBA category + hypothesis -- one block per
 # domain. Read by datainsights/domain_registry.py; consumed by
-# agents/tools.py (product_codes), agents/domain_agent.py
+# agents/domain_agent.py
 # (allowed_actions), and datainsights/correlation/hypothesis.py
 # (category + hypothesis per signal_type).
 #
@@ -21,8 +21,6 @@
 # other agents/* module having been imported first.
 
 deposits:
-  product_codes:
-    deposit: [DEP]
   allowed_actions:
     - "RM to review the client's deposit activity and recent balance trend"
     - "RM to make routine contact with the client about their cash position"
@@ -30,26 +28,34 @@ deposits:
   signals:
     cash_buildup:
       category: TREASURY_OPPORTUNITY
+      why_now: "Balance has been climbing steadily -- the window to place it closes when it moves."
       hypothesis: >-
         A sustained rise in deposit balance usually means idle cash building
         up -- a treasury/deposit conversation is timely before it moves
         elsewhere.
+    large_incoming_payment:
+      category: TREASURY_OPPORTUNITY
+      why_now: "A payment landed well above this client's own pattern -- the surplus is sitting idle right now."
+      hypothesis: >-
+        A payment landing well above this client's own historical pattern usually means a
+        temporary cash surplus -- a short window where a treasury/deposit conversation is more
+        relevant than usual, before the cash moves elsewhere.
     dormancy:
       category: ADVISORY_ONLY
+      non_revenue_action: "RM to make a relationship check-in on the inactive account -- no product offer."
+      why_now: "Account has gone quiet; relationships fade before they formally end."
       hypothesis: >-
         An account with no recent activity may signal the relationship is
         fading -- worth a check-in before it moves entirely.
     revenue_pattern_change:
       category: FINANCING_NEED
+      why_now: "Incoming payment pattern has structurally shifted -- financing need changes with it."
       hypothesis: >-
         A structural step-change in incoming payment pattern often reflects
         genuine business growth -- financing sized to the new scale, not the
         old one, may be relevant.
 
 lending:
-  product_codes:
-    facility: [LON, ODR]
-    mortgage: [MTG]
   allowed_actions:
     - "RM to review the client's facility utilization and headroom"
     - "RM to initiate a facility renewal/refinancing conversation"
@@ -58,12 +64,14 @@ lending:
   signals:
     facility_utilization_spike:
       category: FINANCING_NEED
+      why_now: "Drawn close to the limit -- headroom becomes a constraint before it becomes a request."
       hypothesis: >-
         Drawing close to a facility's limit signals the client may need more
         headroom soon, before the limit itself becomes a constraint on their
         operations.
     facility_maturity_approaching:
       category: FINANCING_NEED
+      why_now: "Facility matures soon; renewal conversations go better before the deadline, not after."
       hypothesis: >-
         A facility approaching its close date needs a renewal conversation
         before it lapses, not after.
@@ -75,6 +83,7 @@ lending:
       # data this pass doesn't have. Unchanged from the prior hardcoded
       # mapping in datainsights/correlation/hypothesis.py.
       category: TREASURY_OPPORTUNITY
+      why_now: "Fixed rate ends shortly -- the client rolls onto a different rate by default if nobody calls."
       hypothesis: >-
         A fixed-rate period ending soon is a natural moment to discuss
         refinancing or hedging terms before the client rolls onto a
@@ -85,17 +94,30 @@ lending:
       # this list). Category stays TREASURY_OPPORTUNITY above until an RM
       # confirms a proposed refinement; the investigator never changes it
       # itself.
+      #
+      # requires_evidence (added after a live run proposed HEDGING_NEED
+      # while its own reasoning said "no multi-currency activity found" --
+      # backwards: absence of FX exposure is TREASURY_OPPORTUNITY evidence,
+      # not HEDGING_NEED evidence): each option names a predicate from
+      # agents/investigator_agent.py's EVIDENCE_PREDICATES that must be
+      # true in this client's OWN tool results before the investigator may
+      # propose it. A proposal whose predicate is false is rejected to
+      # needs_review -- a rule enforced in Python, not a prompt instruction
+      # the model can ignore.
       ambiguous: true
-      category_options: [TREASURY_OPPORTUNITY, HEDGING_NEED]
+      category_options:
+        TREASURY_OPPORTUNITY: {requires_evidence: balance_rising}
+        HEDGING_NEED: {requires_evidence: non_eur_currency_activity}
     collateral_coverage_drop:
       category: RISK_REVIEW
+      non_revenue_action: "Refer to Credit Risk for a collateral adequacy review -- internal action, not a client sales conversation."
+      why_now: "Collateral cover has fallen below requirement -- a credit review matter, not a sales one."
       hypothesis: >-
         Collateral value falling below required coverage on a facility is a
         risk exposure that needs review, independent of the client's other
         activity.
 
 exogenous:
-  product_codes: {}
   allowed_actions:
     - "RM to raise the external event with the client and discuss financing needs it may create"
     - "RM to confirm the client's exposure to this event before any offer is made"
@@ -112,7 +134,6 @@ exogenous:
 risk:
   # PARTY isn't an AGREEMENT-typed entity -- rating_downgrade reads it
   # directly (agents/tools.py), no agreement type-code scoping needed.
-  product_codes: {}
   allowed_actions:
     - "RM to review the downgrade with Credit Risk before any product conversation"
     - "No action -- monitor only"
@@ -124,3 +145,55 @@ risk:
         risk exposure that needs review, independent of the client's other
         activity -- and per rule 1, suppresses any revenue-category
         recommendation for this client until reviewed.
+
+# R10 (docs/refactor_plan.md) -- cross-domain rules. Before this, linking
+# across domains was COUNTING (+1 confidence per extra domain) and the
+# strongest single signal always picked the category, so "balance rising
+# AND facility drawn harder" (growth outrunning working capital) and
+# "balance rising alone" (idle surplus) were the same TREASURY conversation.
+# A rule fires when EVERY signal in `when` is present for the client; the
+# most specific matching rule (longest `when`) wins, YAML order breaks
+# ties. It sets category + hypothesis, and `size_from` names which
+# signal's own figures size the offer (default: the strongest signal).
+# Rule 1 in assemble() -- risk suppression -- still applies AFTER a rule,
+# so a combination can never out-rank a RISK_REVIEW signal or the
+# high-risk flag. Reserved top-level key: NOT a domain.
+combinations:
+  - name: growth_outrunning_working_capital
+    when: [cash_buildup, facility_utilization_spike]
+    category: FINANCING_NEED
+    size_from: facility_utilization_spike
+    hypothesis: >-
+      Deposits are building at the same time the credit facility is being drawn harder --
+      the business is growing faster than its working capital, and the cash on hand is
+      committed, not idle. The conversation is facility headroom, not placing surplus.
+  - name: cash_rich_facility_maturing
+    when: [cash_buildup, facility_maturity_approaching]
+    category: FINANCING_NEED
+    size_from: facility_maturity_approaching
+    hypothesis: >-
+      A facility is approaching maturity while the client's own cash position has been
+      strengthening -- a renewal conversation from a position of strength, with the option
+      to right-size the limit against the balance build-up rather than roll it unchanged.
+  - name: dormant_primary_account_facility_maturing
+    when: [dormancy, facility_maturity_approaching]
+    category: ADVISORY_ONLY
+    hypothesis: >-
+      The deposit account has gone quiet while a facility approaches maturity -- day-to-day
+      banking may already have moved elsewhere, which makes the renewal an attrition risk,
+      not a routine roll. A retention conversation comes before any renewal terms.
+  - name: inflows_shifting_facility_maturing
+    when: [revenue_pattern_change, facility_maturity_approaching]
+    category: FINANCING_NEED
+    size_from: facility_maturity_approaching
+    hypothesis: >-
+      Incoming payment patterns have changed on the client's own account while a facility
+      approaches maturity -- the renewal should be re-sized against the new level of
+      inflows rather than rolled at the old limit.
+  - name: inflows_changing_while_dormant_elsewhere
+    when: [revenue_pattern_change, dormancy]
+    category: ADVISORY_ONLY
+    hypothesis: >-
+      Incoming payment patterns have shifted on one account while another has gone quiet --
+      activity may be consolidating with another bank. A relationship conversation before
+      any product offer.

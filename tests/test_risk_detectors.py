@@ -23,13 +23,13 @@ PM_IMPROVE = pd_migration.DetectorConfig(lookback_days=180, min_relative_change=
 
 
 def party(prty_id, start, end, grd_cd, grd_val):
-    return {"PRTY_ID": prty_id, "EFFECTIVE_START_DT": start, "EFFECTIVE_END_DT": end or "",
-            "RSK_GRD_CD": grd_cd, "RSK_GRD_VAL": grd_val}
+    return {"party_id": prty_id, "valid_from": start, "valid_to": end or "",
+            "grade_code": grd_cd, "grade_value": grd_val}
 
 
 def metric(prty_id, start, end, val, typ="PD_1Y"):
-    return {"PRTY_ID": prty_id, "EFFECTIVE_START_DT": start, "EFFECTIVE_END_DT": end or "",
-            "PRTY_MTR_TYP_CD": typ, "PRTY_MTR_VAL": val}
+    return {"party_id": prty_id, "valid_from": start, "valid_to": end or "",
+            "metric_type": typ, "value": val}
 
 
 # ---------------------------------------------------------------- rating_downgrade

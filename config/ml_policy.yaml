@@ -1,0 +1,62 @@
+# R7 (docs/refactor_plan.md; docs/hardcoding_audit.md §3) -- the power
+# criteria that decide whether ANY challenger is eligible on a dataset.
+# Stated thresholds, in config, with their reasoning -- not demo-tuned
+# floors buried in code. Two levels, because they are two different
+# claims:
+#
+#   robust_baseline -- SLOT E2 (datainsights/ml/baselines.py): a per-entity
+#     outlier-robust statistic (IsolationForest used to drop a client's own
+#     past spikes before median/MAD). NOT machine learning in the model-risk
+#     sense: no cross-client learning, no labels, <= window_points numbers.
+#     Comparing it to the deterministic baseline needs only enough
+#     per-entity history to be meaningful.
+#
+#   ml_challenger -- anything trained ACROSS entities (SLOT E4 propensity
+#     and any successor). Needs (a) a population, not a sample, (b)
+#     per-entity history longer than the window E2 already uses (else the
+#     window IS the whole record and "learning" is memorising), and (c) an
+#     evaluation protocol: RM outcome labels (datainsights/rm_feedback.py)
+#     -- without them no challenger can be shown better, only different.
+#     Below these the ML tab says so, plainly.
+power_criteria:
+  robust_baseline:
+    min_observations_per_entity: 8     # IsolationForestBaseline's own floor
+    min_entities: 30                   # below this a comparison has no power
+  ml_challenger:
+    min_entities: 200                  # a cross-entity model is estimated on a population
+    window_points: 30                  # E2's max_history
+    min_history_multiple_of_window: 2  # per-entity history must exceed the window
+    min_outcome_labels: 100            # RM responses recorded (var/rm_feedback.db) before any challenger can be judged
+
+schemas:
+  fdm:
+    measures:
+      BalanceObservation.balance:
+        enabled: true
+        algorithm: isolation_forest
+        chosen_by: policy
+        hyperparameters:
+          min_observations: 8
+          contamination: 0.1
+          n_estimators: 20
+          max_history: 30
+      Transaction.amount:
+        enabled: true
+        algorithm: isolation_forest
+        chosen_by: policy
+        hyperparameters: {}
+    defaults:
+      algorithm: deterministic
+      require_challenger_win: true
+  sba:
+    measures:
+      BalanceObservation.balance:
+        enabled: true
+        algorithm: deterministic
+        chosen_by: policy
+        hyperparameters: {}
+      Transaction.amount:
+        enabled: true
+        algorithm: deterministic
+        chosen_by: policy
+        hyperparameters: {}

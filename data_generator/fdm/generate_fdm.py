@@ -21,6 +21,7 @@ production-scale synthetic estate.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import sys
 from datetime import date, timedelta
@@ -46,6 +47,19 @@ OUT_DIR_DEFAULT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "outp
 SEGMENTS = ["SME", "MID", "LRGE", "INST"]
 SEGMENT_WEIGHTS = [0.62, 0.24, 0.09, 0.05]
 SEGMENT_BASE_RISK_VAL = {"SME": 6, "MID": 5, "LRGE": 4, "INST": 3}
+
+
+N_RELATIONSHIP_MANAGERS = 20
+
+
+def _rm_id_for(prty_id: str) -> str:
+    """RM001..RM020, deterministically derived from PRTY_ID via a plain
+    hash -- consumes NO rng draw, so adding this never perturbs any other
+    field's random stream on regeneration (the same discipline the
+    cash_buildup fix in M16 held itself to). Synthetic assignment, not a
+    real HR roster -- disclosed in config/entities_fdm.yaml."""
+    digest = hashlib.sha256(prty_id.encode()).hexdigest()
+    return f"RM{(int(digest, 16) % N_RELATIONSHIP_MANAGERS) + 1:03d}"
 
 
 def _no_future(d: date) -> date:
@@ -86,6 +100,7 @@ def gen_party(rng: np.random.Generator) -> pd.DataFrame:
             "RSK_GRD_DT": onboard.isoformat(),
             "PRTY_SGMNT_CD": segment,
             "HIGH_RSK_CUST_IND": cd.IND_TRUE if high_risk else cd.IND_FALSE,
+            "RLTNSHP_MGR_ID": _rm_id_for(prty_id),
         })
 
         if downgrades:
@@ -101,6 +116,7 @@ def gen_party(rng: np.random.Generator) -> pd.DataFrame:
                 "RSK_GRD_DT": v1_end.isoformat(),
                 "PRTY_SGMNT_CD": segment,
                 "HIGH_RSK_CUST_IND": cd.IND_TRUE if high_risk else cd.IND_FALSE,
+                "RLTNSHP_MGR_ID": _rm_id_for(prty_id),  # same RM as v1 -- risk grade changes, RM doesn't
             })
     return pd.DataFrame(rows)
 
@@ -156,6 +172,7 @@ def gen_agreements_and_children(rng: np.random.Generator, party_ids: list[str]):
             "PRTY_AGRMNT_ROLE_CD": cd.PRTY_AGRMNT_ROLE_CD.values[0],
         })
         bal = float(rng.uniform(20_000, 400_000))
+        bal_start = bal  # plain assignment -- consumes no rng draw
         buildup = rng.random() < 0.15  # feeds cash_buildup detector
         dormant = rng.random() < 0.08  # feeds dormancy detector
         if dormant:
@@ -163,8 +180,15 @@ def gen_agreements_and_children(rng: np.random.Generator, party_ids: list[str]):
         d = START_DATE
         while d <= END_DATE:
             drift = float(rng.normal(0, bal * 0.01))
-            if buildup and d > START_DATE + timedelta(days=180):
-                drift += bal * 0.003
+            # A BOUNDED buildup episode, strong enough to actually clear
+            # cash_buildup's gate. The previous 0.003/week ramp topped out
+            # at a 14.87% rise over the detector's 60-day window against a
+            # min_increase_pct of 0.15 -- measured across both the dev and
+            # the 300-party scaled set, ZERO accounts ever crossed, so
+            # TREASURY_OPPORTUNITY could never fire. Fixed window (no extra
+            # rng draw) so every other entity's random stream is unchanged.
+            if buildup and d > END_DATE - timedelta(days=400) and bal < bal_start * 3:
+                drift += bal * 0.02
             bal = max(1000.0, bal + drift)
             daily_balances.append({
                 "AGRMNT_ID": dep_id, "AGRMNT_DLY_BAL_STRT_DTTM": d.isoformat(),

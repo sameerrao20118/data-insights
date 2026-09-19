@@ -1,4 +1,8 @@
 """
+NOTE (R23): the pipeline that wrote var/state.sqlite -- the legacy CLI -- is
+retired. This evaluator is kept as the only ground-truth reader (CLAUDE.md)
+until R18's outcome backtest replaces it; it has no producer today.
+
 Evaluation interface, deliberately separate from detection_engine/. Reads
 detections (from the state store) plus protected ground truth
 (trigger_events.csv) -- the detector itself never sees this file; see
@@ -110,6 +114,7 @@ def report(dataset_label: str, detections_path: str, trigger_events_path: str,
 if __name__ == "__main__":
     with open("config/rules.yaml") as f:
         rules = yaml.safe_load(f)
+    rules.setdefault("evaluation", {"match_window_days": 21})  # R23: legacy block removed from rules.yaml
     window = rules["evaluation"]["match_window_days"]
     report(
         "dev dataset (data_generator/output) -- SAME session authored the injections",

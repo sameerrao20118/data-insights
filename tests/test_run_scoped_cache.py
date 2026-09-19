@@ -13,7 +13,7 @@ from datetime import date, timedelta
 import pytest
 import yaml
 
-from agents.orchestrator import evaluate_book
+from agents.orchestrator import evaluate_book, evaluate_client
 from datainsights.sources.caching import RunScopedCache
 from datainsights.sources.fdm_local import FdmLocalSource
 
@@ -58,20 +58,41 @@ def event():
 
 
 def test_cache_changes_cost_not_answers(rules, event):
+    """Answers must be identical with and without the cache on the book
+    path. The cost claim is measured on the PER-CLIENT path (a fresh
+    CanonicalSource per client, what Trace-one-client and any caller
+    without evaluate_book gets): there the cache is the only thing
+    between O(clients) physical reads and per-distinct-query reads.
+    Since R13, evaluate_book shares one CanonicalSource whose own frame
+    cache already reads each entity once, so on the book path the source
+    cache is nearly redundant -- pinned below rather than asserted as a
+    5x saving it no longer provides there."""
     as_of = event.event_date + timedelta(days=90)
 
     raw = CountingSource(FDM_DIR, CONTRACT_PATH)
     ids = sorted(raw.party(as_of)["PRTY_ID"])[:25]
     raw.physical_reads = 0
     uncached = evaluate_book(ids, source=raw, rules=rules, as_of=as_of, event=event)
-    uncached_reads = raw.physical_reads
+    uncached_book_reads = raw.physical_reads
 
     counted = CountingSource(FDM_DIR, CONTRACT_PATH)
     cached = evaluate_book(ids, source=RunScopedCache(counted), rules=rules, as_of=as_of, event=event)
-    cached_reads = counted.physical_reads
-
     assert [e.recommendation for e in cached] == [e.recommendation for e in uncached]
-    assert cached_reads < uncached_reads / 5, (cached_reads, uncached_reads)
+    # R13: the shared CanonicalSource bounds book-path reads to a handful
+    # of distinct entities, cache or no cache -- never O(clients).
+    assert uncached_book_reads < len(ids), uncached_book_reads
+
+    # Per-client path: the cache is what collapses the reads.
+    raw.physical_reads = 0
+    for prty_id in ids:
+        evaluate_client(prty_id, source=raw, rules=rules, as_of=as_of, event=event, narrate=False)
+    per_client_uncached = raw.physical_reads
+    counted.physical_reads = 0
+    cache = RunScopedCache(counted)
+    for prty_id in ids:
+        evaluate_client(prty_id, source=cache, rules=rules, as_of=as_of, event=event, narrate=False)
+    per_client_cached = counted.physical_reads
+    assert per_client_cached < per_client_uncached / 5, (per_client_cached, per_client_uncached)
 
 
 def test_physical_reads_do_not_grow_with_client_count(rules, event):

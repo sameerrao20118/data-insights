@@ -2,8 +2,8 @@
 
 You have a trial account confirmed (Home page showed $400/$400 credit, 30
 days remaining). This walks through everything from there to
-`python -m datainsights.cli --profile snowflake_trial_ollama` actually
-working. Nobody but you does this part — it needs your account and your
+`python -m agents.demo_fdm_scenario --profile snowflake_trial_ollama` actually
+working (today `source.backend: snowflake` raises in `build_runtime` until R5 wires the adapter). Nobody but you does this part — it needs your account and your
 credentials, which never go into this repo or into chat.
 
 Nothing here costs anything beyond your existing trial credit, and the
@@ -172,7 +172,7 @@ note) or the warehouse/database/schema name not matching what you created.
 ## Step 9 — Run the real pipeline against Snowflake
 
 ```bash
-python -m datainsights.cli --profile snowflake_trial_ollama
+python -m agents.demo_fdm_scenario --profile snowflake_trial_ollama   # NOT RUN -- raises until R5
 ```
 
 Everything downstream (detector, ranking, narrative, judge, digest) is

@@ -25,6 +25,7 @@ from pydantic import BaseModel
 
 from datainsights.domain_registry import UnknownDomainError
 from datainsights.domain_registry import allowed_actions as _allowed_actions
+from datainsights.prompts import load_prompt
 
 
 class DomainNarrative(BaseModel):
@@ -51,6 +52,7 @@ class DomainAgentResult:
     caveats: str
     narrative_source: str
     latency_seconds: float = 0.0
+    prompt_version: int | None = None
 
     @property
     def fell_back(self) -> bool:
@@ -58,7 +60,7 @@ class DomainAgentResult:
 
 
 def model_label(model) -> str:
-    """Auditable model identifier for narrative_source -- e.g. 'qwen2.5:7b',
+    """Auditable model identifier for narrative_source -- e.g. the profile's local model tag,
     never an object repr with a memory address. The AgentCore governance
     table (docs/decision_record.md Tab 5, Phase 2) requires data lineage and
     an audit trail; '<OllamaModel object at 0x...>' satisfies neither."""
@@ -75,8 +77,10 @@ def _pct(value) -> str:
     return f"{float(value) * 100:.1f}%"
 
 
-def _eur(value) -> str:
-    return f"EUR {float(value):,.0f}"
+def _money(value, e: dict | None = None) -> str:
+    """R17: formatted in the evidence's own currency, never an assumed EUR."""
+    cur = str((e or {}).get("currency", "EUR")).upper()
+    return f"{cur} {float(value):,.0f}"
 
 
 # One plain-English sentence per deterministic tool -- used by the
@@ -85,17 +89,20 @@ def _eur(value) -> str:
 # from the tool's own evidence dict; nothing is inferred.
 EVIDENCE_SENTENCES = {
     "check_cash_buildup": lambda e: (
-        f"Deposit balance rose {_pct(e['increase_pct'])} to {_eur(e['current_balance'])} "
-        f"(from {_eur(e['prior_balance'])}) as at {e['event_date']}."),
+        f"Deposit balance rose {_pct(e['increase_pct'])} to {_money(e['current_balance'], e)} "
+        f"(from {_money(e['prior_balance'], e)}) as at {e['event_date']}."),
+    "check_large_incoming_payment": lambda e: (
+        f"Incoming payment of {_money(e['flagged_amount'], e)} on {e['event_date']} against a "
+        f"{_money(e['baseline_median'], e)} median over {e['baseline_n']} prior credits."),
     "check_dormancy": lambda e: (
         f"No account activity for {e['days_since_last_event']} days "
         f"(last transaction {e['last_event_date']})."),
     "check_revenue_pattern_change": lambda e: (
-        f"Average incoming payment changed {_pct(e['change_pct'])}, from {_eur(e['prior_mean_amount'])} "
-        f"to {_eur(e['recent_mean_amount'])}, as at {e['event_date']}."),
+        f"Average incoming payment changed {_pct(e['change_pct'])}, from {_money(e['prior_mean_amount'], e)} "
+        f"to {_money(e['recent_mean_amount'], e)}, as at {e['event_date']}."),
     "check_facility_utilization": lambda e: (
-        f"Facility {_pct(e['utilization_pct'])} drawn ({_eur(e['drawn_amount'])} of "
-        f"{_eur(e['orig_limit'])}) as at {e['event_date']}."),
+        f"Facility {_pct(e['utilization_pct'])} drawn ({_money(e['drawn_amount'], e)} of "
+        f"{_money(e['orig_limit'], e)}) as at {e['event_date']}."),
     "check_facility_maturity": lambda e: (
         f"Facility matures {e['close_date']}, in {e['days_to_close']} days."),
     "check_fixed_rate_expiry": lambda e: (
@@ -106,7 +113,7 @@ EVIDENCE_SENTENCES = {
     "check_exogenous_exposure": lambda e: (
         f"Exposed to a {str(e['event_type']).replace('_', ' ')} on {e['event_date']} "
         f"(sector {e['affected_sector']}, {e['affected_country']}, "
-        f"value {_eur(e['estimated_value_eur'])}), confirmed by the client's own activity."),
+        f"value {_money(e['estimated_value_eur'], e)}), confirmed by the client's own activity."),
     "check_rating_downgrade": lambda e: (
         f"Credit risk grade worsened from {e['prior_grade_cd']} to {e['current_grade_cd']} "
         f"({e['notches']} notch(es)) as at {e['event_date']}."),
@@ -176,10 +183,11 @@ SIGNED_CHANGE_KEYS = ("change_pct", "increase_pct")
 DECREASE_WORDS = ("decrease", "declin", "fell", "fall", "drop", "lower", "reduc", "shrank")
 INCREASE_WORDS = ("increase", "rose", "rise", "grew", "growth", "higher", "climb", "up ")
 
-# Every FDM amount this build surfaces is EUR (the generator writes EUR
-# throughout). A tool that surfaces another currency must add a
-# `currency` field to its evidence; _currency_problem reads it.
-CURRENCY_MARKERS = {"USD": ("$", "usd", "us dollar"), "GBP": ("£", "gbp", "sterling")}
+# R17: every tool's evidence carries its account's `currency`;
+# _currency_problem rejects a narrative that names a currency the
+# evidence does not carry -- in either direction (EUR narrated on USD
+# evidence is as wrong as the reverse).
+CURRENCY_MARKERS = {"EUR": ("€", "eur", "euro"), "USD": ("$", "usd", "us dollar"), "GBP": ("£", "gbp", "sterling")}
 
 
 def _direction_problem(text: str, tool_evidence: dict) -> str | None:
@@ -219,27 +227,8 @@ class DomainAgent:
         self.domain = domain
         self.tools = tools
         self.model = model
-        self.system_prompt = (
-            f"You are a {domain}-domain analyst assistant for a commercial "
-            f"banking relationship manager. You will be given a list of "
-            f"VERIFIED FACTS, already computed by deterministic checks for "
-            f"ONE client -- you do not call any tool or compute anything "
-            f"yourself. Rules:\n"
-            f"1. Summarize ONLY the verified facts you are given. Every "
-            f"number in observed_facts MUST come from those facts, "
-            f"verbatim or trivially rounded. Never invent a number, and "
-            f"never claim a signal that isn't in the facts given to you.\n"
-            f"2. suggested_action MUST be exactly one of: "
-            f"{list(self.allowed_actions)}.\n"
-            f"3. Never mention financial crime, sanctions, PEP status, or "
-            f"politically exposed persons -- that is out of scope for this "
-            f"domain and handled by a separate system.\n"
-            f"4. hypothesis is one general sentence explaining WHY the "
-            f"observed facts might indicate a client need -- not a specific "
-            f"sized number, just the reasoning.\n"
-            f"5. All monetary amounts are EUR. Never write $, USD, £ or GBP.\n"
-            f"This is a synthetic proof-of-concept dataset."
-        )
+        template, self.prompt_version = load_prompt("domain_agent")
+        self.system_prompt = template.format(domain=domain, allowed_actions=list(self.allowed_actions))
 
     def _gather_tool_evidence(self, prty_id: str) -> dict:
         """Call every tool directly (no LLM) -- used both to ground the
@@ -291,7 +280,7 @@ class DomainAgent:
             caveats="Synthetic POC output for RM review, not a validated business conclusion. "
                     f"LLM narrative unavailable this run: {reason}",
             narrative_source=f"deterministic_template ({self.domain} agent fallback: {reason})",
-            latency_seconds=latency_seconds,
+            latency_seconds=latency_seconds, prompt_version=self.prompt_version,
         )
 
     def evaluate(self, prty_id: str) -> DomainAgentResult:
@@ -322,11 +311,13 @@ class DomainAgent:
             verified = [describe_evidence(n, e) for n, e in tool_evidence.items()
                         if isinstance(e, dict) and e.get("status") == "detected"]
             facts_block = "\n".join(f"- {s}" for s in verified) or "- No signals detected by any check."
+            currencies = {str(e.get("currency", "EUR")).upper() for e in tool_evidence.values()
+                          if isinstance(e, dict) and e.get("status") == "detected"} or {"EUR"}
             agent = Agent(model=self.model, tools=[], system_prompt=self.system_prompt)
             result = agent(
                 f"Summarize client {prty_id}'s verified facts below.\n\n"
                 f"Verified facts from the deterministic checks. Restate them faithfully: keep "
-                f"every direction (from/to), every currency (EUR), and every figure exactly as "
+                f"every direction (from/to), every currency ({', '.join(sorted(currencies))}), and every figure exactly as "
                 f"written. Do not describe a score as a percentage.\n{facts_block}",
                 structured_output_model=DomainNarrative,
             )
@@ -347,5 +338,5 @@ class DomainAgent:
             suggested_action=parsed.suggested_action,
             caveats=parsed.caveats + " Synthetic POC output for RM review, not a validated business conclusion.",
             narrative_source=f"strands+ollama:{model_label(self.model)}",
-            latency_seconds=time.monotonic() - t0,
+            latency_seconds=time.monotonic() - t0, prompt_version=self.prompt_version,
         )

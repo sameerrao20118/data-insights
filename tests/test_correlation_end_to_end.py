@@ -16,6 +16,8 @@ from agents.tools import make_deposits_tools, make_lending_tools
 from datainsights.correlation.dedupe import dedupe
 from datainsights.correlation.hypothesis import assemble
 from datainsights.correlation.signal_bus import SignalBus
+from datainsights.semantic.binding import load_binding
+from datainsights.semantic.canonical import CanonicalSource
 from datainsights.sources.fdm_local import FdmLocalSource
 from detection_engine import (
     cash_buildup, collateral_coverage_drop, dormancy, facility_maturity_approaching,
@@ -69,7 +71,7 @@ def _run_all_detectors_for_party(source, rules, prty_id, as_of) -> list:
 
 @pytest.fixture(scope="module")
 def source():
-    return FdmLocalSource(FDM_DIR, CONTRACT_PATH)
+    return CanonicalSource(FdmLocalSource(FDM_DIR, CONTRACT_PATH), load_binding("fdm"))
 
 
 @pytest.fixture(scope="module")

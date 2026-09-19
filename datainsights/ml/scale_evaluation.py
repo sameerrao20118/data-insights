@@ -29,7 +29,7 @@ import hashlib
 import json
 import os
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 import yaml
 
@@ -66,8 +66,11 @@ def run(data_dir: str, events_dir: str, label: str) -> dict:
     event = load_events(events_path)[0]
     as_of = event.event_date + timedelta(days=90)
 
-    parties = source.party(as_of)
-    prty_ids = sorted(parties["PRTY_ID"])
+    from datainsights.semantic.binding import load_binding
+    from datainsights.semantic.canonical import CanonicalSource
+
+    parties = CanonicalSource(source, load_binding("fdm")).read("Party", as_at=as_of)
+    prty_ids = sorted(parties["party_id"])
 
     print(f"\n=== {label}: {len(prty_ids)} clients, as_of={as_of} ===")
 

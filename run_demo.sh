@@ -1,47 +1,21 @@
 #!/usr/bin/env bash
-# One-command full simulation: verify -> detect -> rank -> narrate -> digest,
-# across both event categories, ending in a single unified worklist.
-# This is literally "python -m ..." x5 in sequence -- nothing here is new
-# logic, it's the reproducible path through what already exists.
+# One-command demo: guards -> whole-book run on three schemas through the ONE
+# pipeline (R23) -> the RM worklist. Nothing here is new logic.
 set -e
 cd "$(dirname "$0")"
 source .venv/bin/activate
 
-echo "=================================================================="
-echo "1/5  Test suite -- proves the detection logic behaves as designed"
-echo "=================================================================="
-python -m pytest tests/ -q
+echo "1/4  Lint + deterministic suite"
+python -m ruff check .
+python -m pytest tests/ -q -k "not live"
 
-echo
-echo "=================================================================="
-echo "2/5  Endogenous pipeline: transaction anomaly detection"
-echo "=================================================================="
-python -m datainsights.cli --max-narratives 15
+echo "2/4  Whole book, FDM synthetic schema (tender-award exogenous event confirmed per client)"
+python -m agents.demo_fdm_scenario
 
-echo
-echo "=================================================================="
-echo "3/5  Verification against embedded ground truth (dev diagnostic --"
-echo "     see the printed caveat; this is NOT a clean external benchmark)"
-echo "=================================================================="
-python -m evaluation.evaluate
+echo "3/4  Same pipeline, legacy schema (large_incoming_payment fires here)"
+python -m agents.demo_fdm_scenario --profile legacy_local
 
-echo
-echo "=================================================================="
-echo "4/5  Exogenous pipeline: market/industry/political event matching"
-echo "=================================================================="
-python -m external_events.demo_scenario
+echo "4/4  Same pipeline, real SBA entities"
+python -m agents.demo_fdm_scenario --profile sba_local
 
-echo
-echo "=================================================================="
-echo "5/5  Unified RM worklist -- one row per client recommendation"
-echo "=================================================================="
-python -m datainsights.build_worklist
-
-echo
-echo "=================================================================="
-echo "Done. Outputs to look at:"
-echo "  var/insights/digest_*.md      -- narrative digests, most recent two"
-echo "  var/insights/worklist_*.csv   -- the unified worklist, most recent"
-echo "=================================================================="
-ls -t var/insights/digest_*.md | head -2
-ls -t var/insights/worklist_*.csv | head -1
+echo "Worklist: var/insights/fdm_rm_worklist.csv  --  digest: var/insights/fdm_rm_digest.md"

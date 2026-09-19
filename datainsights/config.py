@@ -41,10 +41,20 @@ class SourceConfig(BaseModel):
     # NotImplementedError with the exact blocking reason (see
     # datainsights/sources/s3_parquet_source.py, glue_athena_source.py) --
     # never a silent fallback to local data. See generalization_plan.md Phase 3.
-    backend: Literal["offline_local", "snowflake", "s3_parquet", "glue_athena"]
+    # "offline_local" -> FdmLocalSource (bi-temporal FDM-shaped contracts);
+    # "offline_local_flat" -> OfflineLocalSource (flat, non-bi-temporal
+    # contracts -- config/entities.yaml's legacy shape, config/entities_sba.yaml's
+    # SBA-hybrid shape). Two backends, not one, because FdmLocalSource
+    # unconditionally expects EFFECTIVE_START_DT/END_DT columns a flat
+    # contract doesn't have.
+    backend: Literal["offline_local", "offline_local_flat", "snowflake", "postgres", "sqlserver", "s3_parquet", "glue_athena"]
     entity_map_ref: str
     access: Literal["read_only"] = "read_only"
-    cost_policy: str
+    # R14 (docs/refactor_plan.md §6a): was a free `str` nothing read. Now a
+    # closed set, cross-checked against the backend below -- a cloud
+    # backend claiming the local-free tier is a contradiction the loader
+    # refuses, rather than a label nobody looks at.
+    cost_policy: Literal["no_cost_local_files", "no_cost_until_deployed_not_run", "verified_trial_only"]
     # Which semantic binding (config/bindings/<name>.yaml) maps this source's
     # physical entities to the canonical model. None = legacy pipeline, which
     # predates the semantic model and reads entity_map_ref directly.
@@ -54,8 +64,12 @@ class SourceConfig(BaseModel):
     # offline_local
     data_dir: Optional[str] = None
 
-    # snowflake
+    # snowflake / postgres / sqlserver / glue_athena (R5: one SqlSource, dialect-aware)
     connection_ref: Optional[str] = None
+    # contract `domain:` -> physical schema (e.g. {"kernel": "ENT_PRD.TIER0_PRS"}); a flat
+    # contract with no domains needs only `default_schema`
+    domain_schema_map: dict[str, str] = {}
+    default_schema: Optional[str] = None
     warehouse_size: Optional[str] = None
     auto_suspend_seconds: Optional[int] = None
     query_timeout_seconds: Optional[int] = None
@@ -71,12 +85,21 @@ class SourceConfig(BaseModel):
     def _check_backend_requirements(self) -> "SourceConfig":
         if self.backend == "offline_local" and not self.data_dir:
             raise ValueError("offline_local source requires data_dir")
-        if self.backend == "snowflake" and not self.connection_ref:
-            raise ValueError("snowflake source requires connection_ref")
+        if self.backend in ("snowflake", "postgres", "sqlserver") and not self.connection_ref:
+            raise ValueError(f"{self.backend} source requires connection_ref")
         if self.backend == "s3_parquet" and not self.s3_uri:
             raise ValueError("s3_parquet source requires s3_uri (s3://... or file://... for local proof)")
         if self.backend == "glue_athena" and not self.glue_database:
             raise ValueError("glue_athena source requires glue_database")
+        cloud = self.backend in ("snowflake", "postgres", "sqlserver", "s3_parquet", "glue_athena")
+        if cloud and self.cost_policy == "no_cost_local_files":
+            raise ValueError(
+                f"backend={self.backend!r} cannot declare cost_policy='no_cost_local_files' -- "
+                f"a cloud backend is never local-free. Use 'no_cost_until_deployed_not_run' "
+                f"(contract-only, nothing runs) or 'verified_trial_only'."
+            )
+        if not cloud and self.cost_policy != "no_cost_local_files":
+            raise ValueError(f"backend={self.backend!r} is local; cost_policy must be 'no_cost_local_files'")
         return self
 
 
@@ -113,8 +136,11 @@ class LLMConfig(BaseModel):
     model: str
     allow_remote_inference: bool = False
     allow_paid_fallback: bool = False
-    fallback: str = "deterministic_template"
-
+    # R14: was a free str nothing read. The deterministic template is the
+    # ONLY fallback that exists and the only one CLAUDE.md permits ("never to a
+    # paid provider") -- a one-value Literal makes any other fallback
+    # unconfigurable, not merely unimplemented.
+    fallback: Literal["deterministic_template"] = "deterministic_template"
     @model_validator(mode="after")
     def _enforce_local_only(self) -> "LLMConfig":
         if self.allow_remote_inference:
@@ -203,8 +229,24 @@ class CostConfig(BaseModel):
         return self
 
 
+class IdentityConfig(BaseModel):
+    """R21 (docs/refactor_plan.md §6j): who is looking. `local_dev` is a
+    developer identity declared here (or overridden by DATAINSIGHTS_USER /
+    DATAINSIGHTS_ROLE / DATAINSIGHTS_RM_IDS) -- honest about being a dev
+    stand-in. `idp` is the contract for the bank's identity provider at
+    Stage 3: declared, NOT RUN, raises if selected. The worklist is scoped
+    server-side from the resolved principal (datainsights/identity.py);
+    the UI never offers a way to pick another RM."""
+    provider: Literal["local_dev", "idp"] = "local_dev"
+    user: str = "local_dev_user"
+    role: Literal["rm", "supervisor", "admin"] = "rm"
+    rm_ids: list[str] = []
+
+
 class Profile(BaseModel):
-    config_version: int
+    # R14: was declared and checked by nothing. A version field that is
+    # never compared is not a version field.
+    config_version: Literal[1]
     profile: str
     runtime: RuntimeConfig
     source: SourceConfig
@@ -216,6 +258,7 @@ class Profile(BaseModel):
     output: OutputConfig
     monitor: MonitorConfig
     cost: CostConfig
+    identity: IdentityConfig = IdentityConfig()
 
 
 class SnowflakeConnectionParams(BaseModel):
@@ -239,9 +282,9 @@ class SnowflakeConnectionParams(BaseModel):
 
 def load_profile(name: Optional[str] = None) -> Profile:
     """Load and validate a profile by name (or $DATAINSIGHTS_PROFILE, or
-    'offline_ollama' if neither is set -- offline is the safe default, a
+    'fdm_local' if neither is set -- a local-files default, a
     Snowflake/paid-capable profile is never selected implicitly)."""
-    name = name or os.environ.get("DATAINSIGHTS_PROFILE", "offline_ollama")
+    name = name or os.environ.get("DATAINSIGHTS_PROFILE", "fdm_local")
     path = PROFILES_DIR / f"{name}.yaml"
     if not path.exists():
         raise FileNotFoundError(f"No profile file at {path}")

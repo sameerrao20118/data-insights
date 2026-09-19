@@ -12,6 +12,7 @@ concepts:
     fields:
       party_id: PRTY_ID
       segment: PRTY_SGMNT_CD
+      relationship_manager_id: RLTNSHP_MGR_ID
     derived:
       high_risk_flag: {from: HIGH_RSK_CUST_IND, map: {"Y": true, "N": false}}
     joins:

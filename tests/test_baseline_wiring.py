@@ -24,13 +24,13 @@ RP_ISO = revenue_pattern_change.DetectorConfig(**{**RP_DET.__dict__, "baseline":
 
 
 def bal_row(agrmnt_id, start: date, amt):
-    return {"PRTY_ID": "P1", "AGRMNT_ID": agrmnt_id,
-            "AGRMNT_DLY_BAL_STRT_DTTM": start.isoformat(), "AGRMNT_LDGR_BAL_AMT": amt}
+    return {"party_id": "P1", "account_id": agrmnt_id,
+            "observed_at": start.isoformat(), "balance": amt}
 
 
 def credit_row(agrmnt_id, posted: date, amt):
-    return {"PRTY_ID": "P1", "AGRMNT_ID": agrmnt_id, "FIN_EVNT_PSTD_DT": posted.isoformat(),
-            "FIN_EVNT_AMT": amt, "FIN_EVNT_SBTYP_CD": "CRD"}
+    return {"party_id": "P1", "account_id": agrmnt_id, "posted_at": posted.isoformat(),
+            "amount": amt, "direction": "credit"}
 
 
 # --- cash_buildup --------------------------------------------------------
@@ -76,7 +76,7 @@ def test_isolation_forest_baseline_never_fits_on_the_future():
     observation must never change what the model already decided about
     an earlier date."""
     base = _steady_then_spike_balances()
-    evaluated_date = pd.to_datetime(base.iloc[-1]["AGRMNT_DLY_BAL_STRT_DTTM"]).date()
+    evaluated_date = pd.to_datetime(base.iloc[-1]["observed_at"]).date()
 
     with_future = pd.concat([base, pd.DataFrame([
         bal_row("A1", evaluated_date + pd.Timedelta(days=30), 999_999.0)
@@ -160,7 +160,7 @@ def test_revenue_isolation_forest_detects_a_genuine_step_change():
 
 def test_revenue_isolation_forest_never_fits_on_the_future():
     base = _steady_then_step_change_credits()
-    evaluated_date = pd.to_datetime(base.iloc[-1]["FIN_EVNT_PSTD_DT"]).date()
+    evaluated_date = pd.to_datetime(base.iloc[-1]["posted_at"]).date()
 
     with_future = pd.concat([base, pd.DataFrame([
         credit_row("A1", evaluated_date + pd.Timedelta(days=30), 999_999.0)
