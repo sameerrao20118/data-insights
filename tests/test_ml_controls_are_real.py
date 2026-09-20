@@ -89,3 +89,35 @@ def test_run_honours_a_disabled_policy_end_to_end(tmp_path, monkeypatch):
     measure = result["measures"][0]
     assert measure["ran"] is False, "a disabled measure ran anyway -- the policy file is being ignored"
     assert "disabled in policy" in measure["skip_reason"]
+
+
+def test_saving_policy_from_the_dashboard_preserves_the_documented_reasoning(tmp_path, monkeypatch):
+    """A Save used to round-trip the YAML and silently delete the
+    `power_criteria` reasoning block -- load-bearing documentation, not
+    decoration. Caught by tests/test_ml_gate.py after it happened for
+    real; this pins the fix at the place that caused it."""
+    import dashboard.common as common
+
+    policy = tmp_path / "config" / "ml_policy.yaml"
+    policy.parent.mkdir(parents=True)
+    policy.write_text(
+        "# R7 -- the power criteria, with their reasoning.\n"
+        "# Two levels, because they are two different claims.\n"
+        "power_criteria:\n  ml_challenger:\n    min_entities: 200\n"
+        "schemas:\n  fdm:\n    measures:\n      BalanceObservation.balance:\n"
+        "        enabled: true\n        algorithm: isolation_forest\n        chosen_by: policy\n"
+        "        hyperparameters: {n_estimators: 20}\n"
+    )
+    monkeypatch.setattr(common, "ROOT", tmp_path)
+    common.save_ml_policy("fdm", {"Transaction.amount": (False, "deterministic")})
+
+    after = policy.read_text()
+    assert "# R7 -- the power criteria, with their reasoning." in after
+    assert "two different claims" in after
+    import yaml
+
+    loaded = yaml.safe_load(after)
+    assert loaded["power_criteria"]["ml_challenger"]["min_entities"] == 200      # untouched
+    assert loaded["schemas"]["fdm"]["measures"]["Transaction.amount"]["enabled"] is False  # the edit landed
+    # a hand-set hyperparameter on another measure survives the save
+    assert loaded["schemas"]["fdm"]["measures"]["BalanceObservation.balance"]["hyperparameters"] == {"n_estimators": 20}

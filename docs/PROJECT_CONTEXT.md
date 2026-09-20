@@ -78,7 +78,7 @@ FdmLocalSource (DuckDB/CSV, bi-temporal as-at)  [Snowflake adapter wired, NOT RU
   -> config/domains_fdm.yaml + datainsights/domain_registry.py   (domain registry, data half)
   -> agents/tools.py + agents/domain_registry.py                  (domain registry, code half --
                                                                     one register() call per domain)
-  -> detection_engine/*.py   (7 FDM detectors + rating_downgrade, same Config/detect() shape)
+  -> detection_engine/*.py   (9 registered detectors across deposits/lending/risk, same Config/detect() shape)
   -> agents/domain_agent.py  (narrates verified facts -- NO tool access, validate-or-fallback)
   -> datainsights/correlation/  (Signal Bus -> Hypothesis Assembler -> De-dup)
   -> ONE Recommendation per client
@@ -360,7 +360,7 @@ data_generator/fdm/generate_fdm.py      synthetic FDM dataset (--n-parties/--his
 data_generator/output_fdm*/             the dataset; protected_evaluator_only/ is ground truth, code-blocked
 datainsights/sources/fdm_local.py       FdmLocalSource -- DuckDB, bi-temporal as-at joins
 datainsights/domain_registry.py         domain registry data-half accessors
-detection_engine/*.py                   7 FDM detectors + rating_downgrade (pd_migration built, unwired)
+detection_engine/*.py                   9 registered detectors (pd_migration built, unwired -- needs PARTY_METRIC)
 agents/tools.py                         Strands @tool per detector, one register() call per domain
 agents/domain_registry.py               domain registry code-half (tool factories, detector modules)
 agents/domain_agent.py                  narrates verified facts, no tool access, validate-or-fallback

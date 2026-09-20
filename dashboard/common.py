@@ -208,10 +208,22 @@ def save_ml_policy(schema: str, edits: dict[str, tuple[bool, str]]) -> None:
     import yaml as _yaml
 
     path = ROOT / "config" / "ml_policy.yaml"
-    raw = {}
+    raw, header = {}, ""
     if path.exists():
-        with open(path) as f:
-            raw = _yaml.safe_load(f) or {}
+        text = path.read_text()
+        # The leading comment block carries the R7 power-criteria reasoning --
+        # load-bearing documentation, not decoration. A yaml round-trip drops
+        # every comment, so capture the header here and re-prepend it on
+        # write. Found the hard way: a Save wiped it and tests/test_ml_gate.py
+        # caught the loss on the next run.
+        lines = text.splitlines(keepends=True)
+        cut = len(lines)
+        for i, line in enumerate(lines):
+            if line.strip() and not line.lstrip().startswith("#"):
+                cut = i
+                break
+        header = "".join(lines[:cut])
+        raw = _yaml.safe_load(text) or {}
     raw.setdefault("schemas", {}).setdefault(schema, {}).setdefault("measures", {})
     schema_measures = raw["schemas"][schema]["measures"]
     for measure, (enabled, algorithm) in edits.items():
@@ -224,6 +236,7 @@ def save_ml_policy(schema: str, edits: dict[str, tuple[bool, str]]) -> None:
             schema_measures[measure]["disabled_reason"] = existing.get(
                 "disabled_reason", "disabled from the dashboard's ML opportunities tab")
     with open(path, "w") as f:
+        f.write(header)
         _yaml.safe_dump(raw, f, sort_keys=False)
 
 
