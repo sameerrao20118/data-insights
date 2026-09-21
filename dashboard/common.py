@@ -66,25 +66,37 @@ DOMAIN_READS = {
     "exogenous": ["Account", "Transaction"],  # deposits also reads Transaction for large_incoming_payment
 }
 
-# What a viewer can actually DO with each data source today -- not what
-# phase built it. "full_agentic" has the whole-book worklist + live
-# per-client demo IN THE DASHBOARD; "proof_only" sources run the same
-# pipeline from the CLI (`agents.demo_fdm_scenario --profile <name>`) and
-# are proven in the suite, but the dashboard's run buttons are still bound
-# to the fdm_local profile (a disclosed gap, R5). One pipeline since R23.
-DATA_SOURCES = {
-    "fdm": {
+# ---------- data sources: DISCOVERED from config/profiles/, not listed ----------
+#
+# This used to be a hand-maintained dict, which meant onboarding a schema
+# (onboarding/accept.py writes a binding, a contract and a profile) left it
+# invisible in the dashboard until someone also hand-added an entry here.
+# Two schemas were mislabelled `proof_only` for exactly that reason long
+# after the pipeline could run them -- legacy produces 167 recommendations
+# and SBA 131, both verified by running them.
+#
+# Now: every profile in config/profiles/ that can actually drive the tabs
+# shows up on its own. `kind` is COMPUTED from capability rather than
+# declared, so it cannot go stale:
+#
+#   full_agentic  <- has a binding, a local data_dir, and that binding
+#                    supplies the picker concept (Party). The three tabs
+#                    can genuinely run.
+#   proof_only    <- a profile that cannot drive them (no binding, no local
+#                    data_dir, or Party unavailable), but has a proof test.
+#   hidden        <- cannot drive the tabs and has no proof to show.
+#
+# CURATED_SOURCES below is presentation only -- a nicer label, a
+# description, a proof test to offer. Absent curation, a profile still
+# appears with a generated label. Nothing here gates functionality.
+
+CURATED_SOURCES = {
+    "fdm_local": {
+        "key": "fdm",
         "label": "FDM synthetic book",
-        "kind": "full_agentic",
-        "profile": "fdm_local",
-        # Canonical concept + field the client picker reads to list clients.
-        # Read through CanonicalSource, so the picker works for any binding
-        # rather than reading one schema's physical party.csv/PRTY_ID.
-        "picker_concept": "Party",
+        # FDM splits tables across kernel/ and lending/; the ML scan wants the
+        # non-recursive root, the data browser wants the whole tree.
         "data_dir": ROOT / "data_generator" / "output_fdm" / "kernel",
-        # data_dir is the ML scan's non-recursive root; data_root is the whole
-        # source tree for the data browser (FDM splits tables across kernel/ and lending/).
-        "data_root": ROOT / "data_generator" / "output_fdm",
         "description": (
             "Bi-temporal Federated Data Model shape -- 60 synthetic commercial clients, "
             "deposits/lending/risk domains, plus a tender-award exogenous event feed. "
@@ -92,19 +104,9 @@ DATA_SOURCES = {
             "narration, RM copilot, feedback capture."
         ),
     },
-    "legacy": {
-        # R23 unified the pipeline -- the same agents/orchestrator.py path
-        # runs this schema, verified by running it: 167 recommendations
-        # against legacy CL00xxx clients. This entry stayed "proof_only"
-        # long after that was true, so the panel told the user no
-        # whole-book generator was wired up while the box directly above
-        # said the opposite. The three tabs are now profile-driven.
+    "legacy_local": {
+        "key": "legacy",
         "label": "Legacy schema",
-        "kind": "full_agentic",
-        "profile": "legacy_local",
-        "picker_concept": "Party",
-        "data_dir": ROOT / "data_generator" / "output",
-        "data_root": ROOT / "data_generator" / "output",
         "description": (
             "A structurally different schema (no bi-temporal versions, different table "
             "names) bound through config/bindings/legacy.yaml. R23 retired the original "
@@ -118,20 +120,12 @@ DATA_SOURCES = {
             "through the same canonical read path; unavailable concepts are reported, not crashed."
         ),
     },
-    "sba": {
-        # Stays proof_only deliberately: unlike legacy, this has not been
-        # verified end-to-end through the whole-book path. Flip it only
-        # after actually running it, not by analogy with legacy.
+    "sba_local": {
+        "key": "sba",
         "label": "SBA — real commercial data",
-        "kind": "proof_only",
-        "profile": "sba_local",
-        "data_dir": ROOT / "data_generator" / "output_fdm_sba",
-        "data_root": ROOT / "data_generator" / "output_fdm_sba",
         "description": (
             "REAL U.S. Small Business Administration PPP loan entities/sectors/loans "
-            "(24 real NAICS sectors), synthetic deposit activity layered on top. Proven "
-            "correct against a real, sampled client set -- no whole-book worklist "
-            "generator wired up for it yet."
+            "(24 real NAICS sectors), synthetic deposit activity layered on top."
         ),
         "proof_test": "tests/test_sba_binding_end_to_end.py",
         "proof_label": "Real-data schema proof",
@@ -143,6 +137,84 @@ DATA_SOURCES = {
         ),
     },
 }
+
+# The canonical concept the client pickers read. A binding that cannot
+# supply it cannot drive the per-client tabs.
+PICKER_CONCEPT = "Party"
+
+
+def _profile_capability(profile_name: str) -> tuple[str, dict]:
+    """(kind, derived fields) for one profile, by asking what it can do.
+
+    Never raises: a profile that cannot be loaded or whose binding is
+    broken is reported as hidden, because a dashboard that crashes on one
+    bad profile is worse than one that omits it."""
+    try:
+        from datainsights.runtime import active_profile
+
+        profile = active_profile(profile_name)
+    except Exception:  # noqa: BLE001 -- an unloadable profile is hidden, not fatal
+        return "hidden", {}
+
+    binding_name = getattr(profile.source, "binding", None)
+    data_dir = getattr(profile.source, "data_dir", None)
+    derived = {"profile": profile_name, "binding": binding_name}
+    if data_dir:
+        derived["data_root"] = ROOT / data_dir
+        derived["data_dir"] = ROOT / data_dir
+
+    # A remote-backed profile (Snowflake, S3) has no local directory to
+    # browse and no verified run behind it -- it self-excludes here rather
+    # than needing a hardcoded skip list.
+    if not binding_name or not data_dir:
+        return "hidden", derived
+
+    try:
+        from datainsights.semantic.binding import load_binding
+
+        binding = load_binding(binding_name)
+        concept = binding.concepts.get(PICKER_CONCEPT)
+        if concept is None or concept.unavailable:
+            return "proof_only", derived
+    except Exception:  # noqa: BLE001 -- a broken binding is proof_only at best
+        return "proof_only", derived
+
+    derived["picker_concept"] = PICKER_CONCEPT
+    return "full_agentic", derived
+
+
+def _discover_data_sources() -> dict:
+    """Every profile that can show something, keyed for the UI."""
+    profiles_dir = ROOT / "config" / "profiles"
+    discovered: dict = {}
+    for path in sorted(profiles_dir.glob("*.yaml")):
+        profile_name = path.stem
+        kind, derived = _profile_capability(profile_name)
+        curated = dict(CURATED_SOURCES.get(profile_name, {}))
+        key = curated.pop("key", profile_name)
+
+        if kind == "hidden" and not curated.get("proof_test"):
+            continue
+        if kind == "hidden":
+            kind = "proof_only"
+
+        entry = {
+            "label": curated.pop("label", profile_name.replace("_", " ").title()),
+            "kind": kind,
+            "description": curated.pop(
+                "description",
+                f"Discovered from config/profiles/{profile_name}.yaml "
+                f"(binding: {derived.get('binding')}). No curated description.",
+            ),
+            **derived,
+        }
+        entry.update(curated)          # proof_test/label/success, data_dir override
+        discovered[key] = entry
+    return discovered
+
+
+DATA_SOURCES = _discover_data_sources()
+
 
 
 def worklist_path_for(profile: str):

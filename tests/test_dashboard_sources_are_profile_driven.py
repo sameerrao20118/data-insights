@@ -22,7 +22,7 @@ import re
 
 import pytest
 
-from dashboard.common import DATA_SOURCES, worklist_path_for
+from dashboard.common import DATA_SOURCES, ROOT, worklist_path_for
 
 EXPLORE = "dashboard/tabs/explore.py"
 
@@ -58,6 +58,72 @@ def test_legacy_is_wired_to_the_whole_book_path():
     legacy = DATA_SOURCES["legacy"]
     assert legacy["kind"] == "full_agentic"
     assert legacy["profile"] == "legacy_local"
+
+
+def test_sba_is_wired_to_the_whole_book_path():
+    """SBA was ALSO mislabelled proof_only. Verified by running it: 131
+    recommendations with every column the worklist tab needs. `kind` is
+    computed from capability now, so this cannot drift again."""
+    sba = DATA_SOURCES["sba"]
+    assert sba["kind"] == "full_agentic"
+    assert sba["profile"] == "sba_local"
+
+
+def test_a_new_profile_appears_with_no_code_change(tmp_path, monkeypatch):
+    """THE generality test, and the reason the hand-maintained dict had to
+    go: onboarding/accept.py writes a binding, a contract and a profile --
+    and the source must then be usable WITHOUT anyone editing
+    dashboard/common.py.
+
+    Copies an existing working profile under a new name, re-runs discovery,
+    and asserts the new source is present, agentic, and has everything the
+    tabs need."""
+    import shutil
+
+    import yaml
+
+    from dashboard import common
+
+    source_profile = ROOT / "config" / "profiles" / "legacy_local.yaml"
+    new_profile = ROOT / "config" / "profiles" / "pytest_newsource_local.yaml"
+    raw = yaml.safe_load(source_profile.read_text())
+    raw["profile"] = "pytest_newsource_local"
+    new_profile.write_text(yaml.safe_dump(raw, sort_keys=False))
+    try:
+        discovered = common._discover_data_sources()
+        assert "pytest_newsource_local" in discovered, (
+            "a newly onboarded profile did not appear in the dashboard's source list -- "
+            "the list must be discovered, never hand-maintained")
+        entry = discovered["pytest_newsource_local"]
+        assert entry["kind"] == "full_agentic", (
+            "a profile with a binding, local data and a Party concept must get the tabs")
+        # Everything the three tabs read off the entry.
+        for required in ("profile", "picker_concept", "data_dir", "data_root", "label"):
+            assert entry.get(required), f"discovered entry missing {required!r}"
+        assert entry["label"], "an uncurated source still needs a readable label"
+    finally:
+        new_profile.unlink(missing_ok=True)
+        shutil.rmtree(ROOT / "__pycache__", ignore_errors=True)
+
+
+def test_a_remote_profile_without_local_data_is_not_offered_as_agentic():
+    """config/profiles/snowflake_trial_ollama.yaml has no binding and no
+    local data_dir. It must not claim tabs it cannot run -- and it must
+    self-exclude by capability, not by a hardcoded skip list."""
+    from dashboard import common
+
+    kind, _ = common._profile_capability("snowflake_trial_ollama")
+    assert kind == "hidden"
+
+
+def test_kind_is_computed_not_declared():
+    """A curated entry must not be able to override `kind` -- that is how
+    legacy and SBA stayed mislabelled. Curation is presentation only."""
+    from dashboard import common
+
+    for profile_name, curated in common.CURATED_SOURCES.items():
+        assert "kind" not in curated, (
+            f"{profile_name} curates `kind` -- it must be computed from capability")
 
 
 def test_no_hardcoded_profile_in_the_explore_page():
