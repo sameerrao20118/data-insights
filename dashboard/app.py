@@ -20,29 +20,53 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from dashboard.common import *  # noqa: E402,F401,F403 -- runs st.set_page_config first
-from dashboard.tabs import PAGES  # noqa: E402
+from dashboard.tabs import PAGE_GROUPS, PAGES  # noqa: E402
 
 # ---------- sidebar ----------
+# Navigation + status only, per the Streamlit layout guidance: main content
+# belongs in the main area. Pages are grouped (dashboard/tabs/__init__.py's
+# PAGE_GROUPS) so the entry point is obvious instead of being the first of
+# ten equal-looking peers.
 
 with st.sidebar:
     st.markdown("### DataInsights")
-    st.caption("Commercial/institutional NBA-EBM proof of concept")
+    st.caption("Commercial/institutional NBA-EBM")
+
     ok = ollama_reachable()
-    st.markdown(f"**Local Ollama:** {'🟢 reachable' if ok else '🔴 not reachable'}")
+    st.badge("Ollama reachable" if ok else "Ollama unreachable",
+             icon=":material/check_circle:" if ok else ":material/error:",
+             color="green" if ok else "orange")
     if not ok:
-        st.caption("Narrative steps fall back to a deterministic template, per project policy — no cloud fallback ever.")
+        st.caption("Narration falls back to a deterministic template — never a cloud call.")
+
     try:
         from datainsights.identity import resolve_principal
         from datainsights.runtime import active_profile
-        st.caption(f"Signed in: {resolve_principal(active_profile()).describe()}")
+        _principal = resolve_principal(active_profile())
+        st.caption(f":material/person: {_principal.describe()}")
     except Exception as _e:  # noqa: BLE001 -- identity problems are shown, never hidden
-        st.caption(f"Identity: {type(_e).__name__}: {_e}")
+        st.caption(f":material/person_off: Identity: {type(_e).__name__}: {_e}")
+
     st.divider()
-    page = st.radio(
-        "Section",
-        list(PAGES),
-        label_visibility="collapsed",
-    )
+
+    # ONE radio over all pages, ordered by group, with the group name
+    # prefixed onto each label. A radio per group would put the heading
+    # closer to its pages, but needs four widgets coordinating through
+    # session state to keep a single selection -- more moving parts than
+    # the grouping is worth, and it breaks the single-widget assumption
+    # tests/test_dashboard_pages_render.py drives navigation with.
+    _group_of = {name: label for label, names in PAGE_GROUPS for name in names}
+    _ordered = [name for _, names in PAGE_GROUPS for name in names]
+
+    def _nav_label(name: str) -> str:
+        """First page of each group carries the group heading."""
+        label = _group_of[name]
+        first_in_group = next(n for n in _ordered if _group_of[n] == label)
+        return f"{label.upper()}\n\n{name}" if name == first_in_group else name
+
+    page = st.radio("Section", _ordered, label_visibility="collapsed",
+                    format_func=_nav_label)
+
     st.divider()
     st.caption(
         "Synthetic data only — no real client, transaction, or event data "

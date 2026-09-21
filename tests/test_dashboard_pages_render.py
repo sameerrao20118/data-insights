@@ -30,6 +30,30 @@ def test_every_page_renders_without_an_exception(page):
     assert not at.exception, f"{page!r} raised: {[e.value for e in at.exception]}"
 
 
+def test_every_page_has_exactly_one_sidebar_group():
+    """PAGE_GROUPS is what the sidebar renders. A page missing from it
+    would silently disappear from navigation while still existing in
+    PAGES -- reachable by nothing."""
+    from dashboard.tabs import PAGE_GROUPS, PAGES
+
+    grouped = [name for _, names in PAGE_GROUPS for name in names]
+    assert sorted(grouped) == sorted(PAGES), (
+        "every page must appear in exactly one sidebar group: "
+        f"ungrouped={sorted(set(PAGES) - set(grouped))}, "
+        f"unknown={sorted(set(grouped) - set(PAGES))}")
+    assert len(grouped) == len(set(grouped)), "a page appears in two groups"
+
+
+def test_work_group_comes_first():
+    """The entry point should not be a guess. Explore is the product; it
+    leads the first group."""
+    from dashboard.tabs import PAGE_GROUPS
+
+    first_label, first_pages = PAGE_GROUPS[0]
+    assert first_label == "Work"
+    assert first_pages[0] == "Explore a source"
+
+
 def test_dispatcher_is_thin_and_pages_are_modules():
     with open(APP) as f:
         n = len(f.read().splitlines())

@@ -176,12 +176,9 @@ def _render_fdm_worklist_tab(key: str, src: dict) -> None:
         return
 
     df = read_csv(per_profile)
-    st.caption(
-        f"Reading `{per_profile.relative_to(ROOT)}` — {len(df):,} recommendations from "
-        f"profile `{profile}` through `agents/orchestrator.py`. Every revenue figure is an "
-        "illustrative planning assumption from `config/rules.yaml`, not this bank's pricing "
-        "or a quote."
-    )
+    # "illustrative" is a disclosure, not explanation -- it stays visible.
+    st.caption(f"{len(df):,} recommendations · `{per_profile.relative_to(ROOT)}` · "
+               f"revenue figures are **illustrative** planning assumptions, not pricing.")
     revenue = df["indicative_revenue_eur"].dropna()
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Recommendations", len(df))
@@ -203,9 +200,8 @@ def _render_fdm_worklist_tab(key: str, src: dict) -> None:
     principal = resolve_principal(active_profile())
     unscoped_n = len(df)
     df = scope_worklist(df, principal)
-    st.caption(f"Signed in as **{principal.describe()}** — {len(df)} of {unscoped_n} recommendations are "
-               f"in your entitlement. Not you? Set `DATAINSIGHTS_ROLE` / `DATAINSIGHTS_RM_IDS` before "
-               f"launching (local_dev identity); the bank's identity provider replaces this at Stage 3.")
+    st.caption(f":material/lock: {len(df)} of {unscoped_n} recommendations are in your entitlement "
+               f"({principal.describe()}).")
     if df.empty:
         st.info("Nothing in your entitlement on this book.")
         return
@@ -224,23 +220,47 @@ def _render_fdm_worklist_tab(key: str, src: dict) -> None:
         if chosen and column in filtered.columns:
             filtered = filtered[filtered[column].isin(chosen)]
 
-    st.dataframe(
-        filtered[[c for c in ["rank", "prty_id", "relationship_manager_id", "segment", "sector",
-                              "country", "nba_category", "indicative_revenue_eur",
-                              "indicative_offer_eur", "signal_strength", "confirming_domains",
-                              "why_now"] if c in filtered.columns]],
-        width="stretch", hide_index=True, height=380,
-        column_config={"relationship_manager_id": st.column_config.TextColumn("RM", width="small")},
+    # Click a row to read its card. The dropdown below used to be the only
+    # way to choose, which meant selecting twice: once by eye in the table,
+    # again in a widget under it. Row selection keeps the dropdown as a
+    # fallback so the page still works if no row is selected.
+    pool = filtered if len(filtered) else df
+    shown = [c for c in ["rank", "prty_id", "nba_category", "signal_strength",
+                         "indicative_revenue_eur", "why_now"] if c in pool.columns]
+    event = st.dataframe(
+        pool[shown], width="stretch", hide_index=True, height=360,
+        on_select="rerun", selection_mode="single-row", key=f"worklist_{key}",
+        column_config={
+            "rank": st.column_config.NumberColumn("#", width="small", pinned=True),
+            "prty_id": st.column_config.TextColumn("Client", pinned=True),
+            "nba_category": st.column_config.TextColumn("Category"),
+            "signal_strength": st.column_config.ProgressColumn(
+                "Confidence", min_value=0, max_value=5, format="%d/5"),
+            "indicative_revenue_eur": st.column_config.NumberColumn(
+                "Revenue (illustrative)", format="%.0f"),
+            "why_now": st.column_config.TextColumn("Why now", width="large"),
+        },
     )
 
     st.divider()
     st.subheader("Prepare for the client call")
-    pool = filtered if len(filtered) else df
-    labels = {r["rank"]: f"#{r['rank']} — {r['prty_id']} — {r['nba_category']}" for _, r in pool.iterrows()}
-    chosen_rank = st.selectbox("Recommendation", list(labels), format_func=lambda r: labels[r])
+    labels = {r["rank"]: f"#{r['rank']} — {r['prty_id']} — {r['nba_category']}"
+              for _, r in pool.iterrows()}
+    selected_rows = event.selection.rows if event and event.selection else []
+    if selected_rows:
+        chosen_rank = int(pool.iloc[selected_rows[0]]["rank"])
+        st.caption(":material/ads_click: Showing the row you selected — "
+                   "click another, or use the dropdown.")
+    else:
+        chosen_rank = st.selectbox("Recommendation", list(labels),
+                                   format_func=lambda r: labels[r], key=f"rec_pick_{key}")
     row = df[df["rank"] == chosen_rank].iloc[0]
     revenue_text = (f"~EUR {row['indicative_revenue_eur']:,.0f} (illustrative)"
                     if pd.notna(row["indicative_revenue_eur"]) else "none — not a sized revenue opportunity")
+    _revenue_category = row["nba_category"] not in ("RISK_REVIEW", "ADVISORY_ONLY")
+    st.badge(row["nba_category"].replace("_", " ").title(),
+             icon=":material/trending_up:" if _revenue_category else ":material/shield:",
+             color="green" if _revenue_category else "gray")
     st.markdown(f"**{row['prty_id']}** — {row['segment']} · {row['sector']} · {row['country']}")
     st.markdown(f"**Why now:** {row['why_now']}")
     st.markdown(f"**Hypothesis:** {row['hypothesis']}")
@@ -324,14 +344,17 @@ def _render_fdm_live_demo_tab(key: str, src: dict) -> None:
     from datetime import timedelta
 
     profile = src["profile"]
-    st.caption(
-        "The SAME pipeline as **Trace one client**, with narration switched on: each domain "
-        "agent makes a REAL local Ollama call to write its observed facts, hypothesis and "
-        "suggested action - and each narrative is VALIDATED against that agent's own tool "
-        "evidence before being accepted, falling back to a deterministic template on any "
-        "failure. Slower on purpose (~15-25s). **The recommendation is identical either way** - "
-        "the LLM narrates, it never decides the category, sizing or score."
-    )
+    st.caption("Same pipeline as Trace, with narration on. Slower (~15-25s). "
+               "**The recommendation is identical either way** — the LLM narrates, it never "
+               "decides the category, sizing or score.")
+    with st.expander("How narration is kept honest", icon=":material/info:"):
+        st.markdown(
+            "Each domain agent makes a real local Ollama call to write its observed facts, "
+            "hypothesis and suggested action. Every narrative is **validated against that "
+            "agent's own tool evidence** before being accepted — schema, numeric "
+            "traceability, direction, currency and banned-term checks — and falls back to a "
+            "deterministic template on any failure. An unvalidated claim never reaches an RM."
+        )
     try:
         party_ids = _client_ids(profile, src["picker_concept"])
     except Exception as e:  # noqa: BLE001 -- an unreadable source is reported, never a crash
@@ -437,13 +460,13 @@ def _render_fdm_trace_tab(key: str, src: dict) -> None:
     from datetime import date, timedelta
 
     profile = src["profile"]
-    st.caption(
-        "**Start here — you do NOT need to run the whole book first.** One client, traced "
-        "through every stage: each domain agent's own evidence → the shared signal bus → the "
-        "exogenous event check → the deterministic arbitration that picks ONE category and "
-        "sizes ONE offer → the card the RM sees. Batch mode (no LLM), so it returns in about "
-        "a second."
-    )
+    st.caption("Start here — no need to run the whole book first. Returns in about a second.")
+    with st.expander("What a trace shows", icon=":material/info:"):
+        st.markdown(
+            "One client through every stage: each domain agent's own evidence → the shared "
+            "signal bus → the exogenous event check → the deterministic arbitration that "
+            "picks ONE category and sizes ONE offer → the card the RM sees. Batch mode, no LLM."
+        )
     try:
         party_ids = _client_ids(profile, src["picker_concept"])
     except Exception as e:  # noqa: BLE001 -- an unreadable source is reported, never a crash
@@ -532,14 +555,15 @@ def _render_fdm_trace_tab(key: str, src: dict) -> None:
                                      "physical table(s)": physical, "note": note})
         if lineage_rows:
             st.dataframe(pd.DataFrame(lineage_rows), width="stretch", hide_index=True)
-        st.caption(
-            "An agent never names a physical table. It asks for a canonical concept "
-            "(`config/semantic_model.yaml`); the active binding (`config/bindings/fdm.yaml`) "
-            "decides which physical table(s) that resolves to. That indirection is why these "
-            "same agents run unchanged against the legacy and SBA schemas. **One concept can "
-            "already span several tables** - see the join counts above. What is NOT supported "
-            "today: spanning several *databases* in one run (one profile = one backend)."
-        )
+        with st.expander("Why an agent never names a table", icon=":material/info:"):
+            st.markdown(
+                f"An agent asks for a canonical concept (`config/semantic_model.yaml`); the "
+                f"active binding decides which physical table(s) that resolves to. That "
+                f"indirection is why the same agents run unchanged against every schema here. "
+                f"**One concept can already span several tables** — see the join counts above. "
+                f"Not supported today: spanning several *databases* in one run "
+                f"(one profile = one backend)."
+            )
         touched = sorted({t for sig in evaluation.signals for t in sig.source_tables})
         if touched:
             st.success("Tables that actually produced a signal for this client: "
@@ -702,15 +726,11 @@ def _client_ids(profile: str, concept: str) -> list[str]:
 
 def _render_fdm_source(key: str, src: dict) -> None:
     profile = src["profile"]
-    st.caption(
-        "Runs through `agents/orchestrator.py`: canonical schema, declarative event types, "
-        "deterministic correlation. **The three tabs below are independent — run any one "
-        "without the others.** Trace = understand the flow for one client; Whole-book = the "
-        "volume view an RM triages; Live narration = the same one client with real LLM calls."
-    )
-    st.caption(f"Profile: `{profile}` — every tab below runs against this source, not a fixed one.")
+    st.caption(f"Profile `{profile}` · the three tabs are independent — run any one alone.")
     trace_tab, vol_tab, depth_tab = st.tabs(
-        ["🔍 Trace one client", "📋 Whole-book worklist", "🔎 Live narration"])
+        [":material/search: Trace one client",
+         ":material/list_alt: Whole-book worklist",
+         ":material/auto_awesome: Live narration"])
     with trace_tab:
         _render_fdm_trace_tab(key, src)
     with vol_tab:
@@ -720,13 +740,17 @@ def _render_fdm_source(key: str, src: dict) -> None:
 
 
 def _render_proof_only_source(key: str, src: dict) -> None:
-    st.markdown(
-        "No whole-book worklist generator is wired up for this source yet — "
-        "`agents/demo_fdm_scenario.py` still calls a few FDM-only data-source methods "
-        "internally, confirmed by actually running it against this schema and watching it "
-        "fail. What IS proven, for real: the same detector tools run against this schema's "
-        "data, correctly, at a sampled scale — run it below."
-    )
+    # Reached when a profile cannot drive the per-client tabs -- its binding
+    # does not supply the picker concept, or it has no local data. The old
+    # text here claimed no whole-book generator existed for such a source,
+    # which was stale after R23 and wrong for legacy and SBA (167 and 131
+    # recommendations respectively). `kind` is computed from capability now,
+    # so this branch describes a real limitation rather than a stale label.
+    st.warning(
+        f"This source cannot drive the per-client tabs — its binding "
+        f"(`{src.get('binding')}`) does not supply the `{PICKER_CONCEPT}` concept, or it has "
+        f"no local data directory. Its sampled proof still runs.",
+        icon=":material/info:")
     if st.button(f"▶ Run: {src['proof_label']}", key=f"run_proof_{key}"):
         run_module(["pytest", src["proof_test"], "-q"], src["proof_label"])
     entry = next((e for e in st.session_state.get("logs", []) if e["label"] == src["proof_label"]), None)
@@ -740,19 +764,20 @@ def _render_proof_only_source(key: str, src: dict) -> None:
 
 
 def render() -> None:
-    st.caption(
-        "Pick a data source below. What you can actually DO with it -- run the whole book, "
-        "watch a live per-client demo, ask the copilot, or (for a source not wired into the "
-        "whole-book generator yet) run its verified sampled proof -- differs per source, and "
-        "is disclosed here, not hidden behind which tab you happened to click."
-    )
     source_key = st.selectbox(
         "Data source", list(DATA_SOURCES),
         format_func=lambda k: DATA_SOURCES[k]["label"],
         key="explore_source",
     )
     src = DATA_SOURCES[source_key]
-    st.info(src["description"], icon="\U0001F5C2\uFE0F")
+
+    with st.expander("About this source", icon=":material/info:"):
+        st.markdown(src["description"])
+        st.caption(
+            "What you can do differs per source and is disclosed here, not hidden behind "
+            "which tab you happened to click. Sources are discovered from "
+            "`config/profiles/` \u2014 onboarding one makes it appear here with no code change."
+        )
     st.divider()
 
     _render_source_data_panel(source_key, src)
