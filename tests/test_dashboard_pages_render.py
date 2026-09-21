@@ -21,12 +21,12 @@ def _pages() -> list[str]:
 
 
 @pytest.mark.parametrize("page", _pages())
-def test_every_page_renders_without_an_exception(page):
+def test_every_page_renders_without_an_exception(page, navigate_to):
     from streamlit.testing.v1 import AppTest
 
     at = AppTest.from_file(APP, default_timeout=180)
     at.run()
-    at.sidebar.radio[0].set_value(page).run()
+    at = navigate_to(at, page)
     assert not at.exception, f"{page!r} raised: {[e.value for e in at.exception]}"
 
 
@@ -61,3 +61,39 @@ def test_dispatcher_is_thin_and_pages_are_modules():
     tabs_dir = os.path.join(REPO_ROOT, "dashboard", "tabs")
     modules = {f[:-3] for f in os.listdir(tabs_dir) if f.endswith(".py") and f != "__init__.py"}
     assert len(modules) == len(_pages())
+
+
+def test_category_count_is_counted_not_hardcoded():
+    """The heading read "The six recommendation categories" while the list
+    under it was built from config/categories.yaml -- so a seventh category
+    would have produced seven items under a heading saying six."""
+    import re
+
+    src = open(os.path.join(REPO_ROOT, "dashboard", "tabs", "technique.py")).read()
+    src = re.sub(r'"""[\s\S]*?"""', "", src)
+    for word in ("six", "seven", "eight"):
+        assert f"The {word} recommendation" not in src, (
+            f"technique.py hardcodes a category count ({word}) -- count len(CATEGORY_INFO)")
+
+
+def test_discovered_signals_are_surfaced_and_marked_shadow(navigate_to):
+    """Three discovered signals existed with no way to see them from the
+    dashboard, which made the whole discovery pipeline invisible. If any
+    are accepted, the page must show them AND say they are held out."""
+    from streamlit.testing.v1 import AppTest
+
+    from onboarding.signal_accept import shadow_signal_types
+
+    at = AppTest.from_file(APP, default_timeout=180)
+    at.run()
+    at = navigate_to(at, "Technique reference")
+    assert not at.exception, [e.value for e in at.exception]
+
+    headings = " ".join(str(s.value) for s in at.subheader)
+    assert "Signals" in headings, "live signals are not listed"
+
+    if shadow_signal_types():
+        assert "shadow" in headings.lower(), "discovered signals exist but are not surfaced"
+        warned = " ".join(str(w.value) for w in at.warning).lower()
+        assert "worklist" in warned, (
+            "a shadow signal must be shown as held out of the pipeline, not as a normal signal")

@@ -55,17 +55,31 @@ with st.sidebar:
     # session state to keep a single selection -- more moving parts than
     # the grouping is worth, and it breaks the single-widget assumption
     # tests/test_dashboard_pages_render.py drives navigation with.
-    _group_of = {name: label for label, names in PAGE_GROUPS for name in names}
-    _ordered = [name for _, names in PAGE_GROUPS for name in names]
+    # A heading prefixed onto the first option's label rendered as part of
+    # that option -- the group name sat on the radio row and read like a
+    # selectable item. Streamlit has no option-group primitive for a radio,
+    # so the working alternative is a selectbox per group plus one "active
+    # group" marker: exactly one group holds the live selection, and the
+    # heading is a real label above its own control rather than text glued
+    # to a row.
+    if "nav_page" not in st.session_state:
+        st.session_state["nav_page"] = "Explore a source"
+        st.session_state["nav_group"] = PAGE_GROUPS[0][0]
 
-    def _nav_label(name: str) -> str:
-        """First page of each group carries the group heading."""
-        label = _group_of[name]
-        first_in_group = next(n for n in _ordered if _group_of[n] == label)
-        return f"{label.upper()}\n\n{name}" if name == first_in_group else name
+    for _label, _names in PAGE_GROUPS:
+        _is_active = st.session_state["nav_group"] == _label
+        _chosen = st.selectbox(
+            _label, _names, key=f"nav_sel_{_label}",
+            index=_names.index(st.session_state["nav_page"]) if _is_active else None,
+            placeholder="—", label_visibility="visible",
+        )
+        # A group only claims the page when its own selection CHANGED, so
+        # re-rendering the active group does not steal focus back.
+        if _chosen and (_chosen != st.session_state["nav_page"]):
+            st.session_state["nav_page"] = _chosen
+            st.session_state["nav_group"] = _label
 
-    page = st.radio("Section", _ordered, label_visibility="collapsed",
-                    format_func=_nav_label)
+    page = st.session_state["nav_page"]
 
     st.divider()
     st.caption(

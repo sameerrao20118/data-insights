@@ -34,14 +34,16 @@ def test_the_protected_file_exists_so_this_test_is_not_vacuous():
         "trivially without actually testing the exclusion")
 
 
-def test_source_browser_excludes_the_protected_directory():
+def test_source_browser_excludes_the_protected_directory(navigate_to):
     """The unit-level guarantee: _source_tables must never return a path
     under protected_evaluator_only, even though it walks recursively."""
     from streamlit.testing.v1 import AppTest
 
     at = AppTest.from_file(os.path.join(REPO_ROOT, "dashboard", "app.py"))
     at.run(timeout=120)
-    at.sidebar.radio[0].set_value("Explore a source").run(timeout=120)
+    # Navigate via whichever control offers the page, not a fixed widget
+    # index -- see tests/conftest.py for why.
+    at = navigate_to(at, "Explore a source")
     at.selectbox(key="explore_source").set_value("Legacy schema").run(timeout=120)
     assert not at.exception, at.exception
 
