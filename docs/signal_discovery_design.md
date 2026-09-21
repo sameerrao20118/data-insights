@@ -268,9 +268,62 @@ python -m onboarding.discover_signals --profile legacy_local --max-proposals 3
 Neither writes config. Acceptance is a separate explicit call to
 `onboarding/signal_accept.py::accept(proposals, accepted_by=...)`.
 
-## Not built
+## Scope: the full recommendation set, and what was built
 
-- A dashboard tab for reviewing proposals (stage D is currently a Python call)
-- SQL/Spark executors
-- Promotion tooling (moving a shadow signal to `domains_fdm.yaml` is a manual edit)
-- Combination-rule proposals (co-occurrence is computed and reported; nothing proposes the rule text)
+The design was agreed as 15 numbered recommendations. Implementation was
+scoped to **1-8**. Recommendations 9-15 were never started — they are not
+abandoned or blocked, just out of the agreed scope.
+
+Note the word "stage" is overloaded: recommendations 4-8 correspond to
+pipeline stages A-E. "Stage 8" and "recommendation 8" are the same thing
+(shadow mode); "stage E" is also that thing. Recommendations 9-15 have no
+letter.
+
+### Built (recommendations 1-8)
+
+| # | Recommendation | Where |
+|---|---|---|
+| 1 | Collapse 9 detectors into 5 archetypes | `detection_engine/specs/archetypes.py` |
+| 2 | A detector is a YAML spec, not a Python module | same |
+| 3 | Declare the `raw_measure` contract per archetype | same, `Archetype.raw_measure_keys` |
+| 4 | Stage A — enumerate candidates deterministically | `onboarding/signal_enumerator.py` |
+| 5 | Stage B — screen for novelty, not value | `onboarding/signal_screener.py` |
+| 6 | Stage C — Ollama proposer, validate-or-reject | `onboarding/signal_proposer.py` |
+| 7 | Stage D — human acceptance gate | `onboarding/signal_accept.py` |
+| 8 | Stage E — shadow mode before any RM sees it | same, + `config/domains_discovered.yaml` |
+
+Recommendation 9 ("no new categories in v1") is a *constraint*, and it is
+honoured: `signal_proposer.py` rejects any category not registered in
+`config/categories.yaml`. It required no separate work.
+
+### Not built (recommendations 10-15, multi-backend execution)
+
+None of these were in scope. All concern running the same spec somewhere
+other than pandas:
+
+| # | Recommendation | Note |
+|---|---|---|
+| 10 | One spec, three executors (pandas / sql / spark) | only pandas exists |
+| 11 | Keep all five archetypes UDF-free | **already satisfied** by the built archetypes — this constrained the design rather than requiring code |
+| 12 | Declare median `exact`/`approx`, record which ran | **partly built**: `median_mode` is declared, recorded on every Signal, and `approx` is *rejected* by the pandas executor. The approx path itself awaits a pushdown executor |
+| 13 | Mark which baseline a spec uses, so the planner knows if pushdown is possible | not built |
+| 14 | Executor selection is a planner, not a config flag | not built |
+| 15 | Conformance suite across executors | not built. Copy `tests/test_sql_source_conformance.py`'s approach |
+
+**Snowflake has still never executed a query from this repo.**
+
+### Also not built (beyond the 15)
+
+Gaps found during implementation, not part of the original set:
+
+- A dashboard tab for stage D — acceptance is currently a Python call
+- Promotion tooling — moving a shadow signal to `domains_fdm.yaml` is a manual edit
+- Combination-rule proposals — co-occurrence lift is computed and reported
+  (`signal_screener.co_occurrence`), but nothing proposes the rule text
+
+### Two rejected options, recorded so they are not revisited by accident
+
+| Rejected | Why |
+|---|---|
+| LLM generates detector *code* | Demos faster; unauditable and unmergeable in a bank. The value of the design is that a recommendation traces to a rule a human can read |
+| Port the existing 9 detectors as a prerequisite | Unnecessary. Spec and Python detectors coexist; port later if useful, proven by golden-equivalence tests the way R23 did |

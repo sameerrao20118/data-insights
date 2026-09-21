@@ -122,6 +122,21 @@ the hand-written detectors require of their caller (see
 
 ---
 
+## What is pending
+
+The design was agreed as **15 numbered recommendations**;
+implementation was scoped to **1-8**. Recommendations 10-15 (multi-backend
+execution) were never started — out of scope, not blocked.
+
+`docs/signal_discovery_design.md` has the authoritative table under
+**"Scope: the full recommendation set, and what was built"** — it lists
+all 15, where each built one lives, and what each unbuilt one needs.
+Read that first; this section is just the priority ordering.
+
+Beware the overloaded word "stage": recommendations 4-8 are pipeline
+stages A-E, so "stage 8" and "recommendation 8" are the same thing
+(shadow mode). Recommendations 10-15 have no letter.
+
 ## Suggested next steps
 
 Roughly in order of value:

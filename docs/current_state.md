@@ -54,13 +54,31 @@ ML challenger is eligible* and names the criterion (92 entities < 200;
 0 RM outcome labels < 100). The plumbing for a real cross-entity model
 (policy, registry, label pipeline) exists and waits for labels.
 
-**Suite:** run `pytest tests/ -q -k "not live"` — ~700 tests, ~1 min, no
+**Signal discovery, in shadow.** Until recently every signal in
+`config/domains_fdm.yaml` was hand-authored — the system could execute
+signals a person had named, but nothing could propose a new one from the
+data. `onboarding/signal_*.py` now enumerates candidate rules over
+canonical fields, screens them for NOVELTY (not value — there are no RM
+outcome labels to measure value with), and asks local Ollama to name and
+categorise the survivors. Accepted proposals land in
+`config/domains_discovered.yaml` as `status: shadow`:
+`datainsights/domain_registry.py` does not read that file, so
+`correlation/hypothesis.py::assemble()` cannot resolve their category and
+they cannot reach an RM worklist. Run on legacy data: 28 candidates, 3
+passed screening, 3 accepted to shadow, 0 promoted. Scope was
+recommendations 1-8 of 15; 10-15 (SQL/Spark executors) are not started.
+See `docs/signal_discovery_design.md` for the full scope table and
+`docs/HANDOFF_signal_discovery.md` to resume the work.
+
+**Suite:** run `pytest tests/ -q -k "not live"` — ~770 tests, ~1 min, no
 model needed. The dashboard's ten pages each render under AppTest in it. Live tests need local Ollama.
 
 **Not yet (Wave 3 and beyond):** Wave 3 (semantic registry + domain packs, per-binding rules,
 currency, profile proposer, entitlement, retire the legacy pipeline) and
 Wave 4 (run lock, incremental runs, event ingestion, more sources,
 outcome backtest) are not started. Snowflake has never executed a query.
+Signal discovery recommendations 10-15 (one spec, three executors;
+pushdown planner; cross-executor conformance suite) are not started.
 
 ## Run it yourself
 
