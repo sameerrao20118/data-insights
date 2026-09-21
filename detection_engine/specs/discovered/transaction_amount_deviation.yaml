@@ -1,0 +1,17 @@
+signal_type: transaction_amount_deviation
+archetype: own_history_deviation
+domain: deposits
+concept: Transaction
+grain:
+- party_id
+- account_id
+direction: increase
+params:
+  measure: amount
+  date_field: posted_at
+  window_days: 90
+  k: 2.1
+  median_mode: exact
+origin: discovered
+status: shadow
+notes: ''

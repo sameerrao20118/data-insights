@@ -1,0 +1,84 @@
+# DISCOVERED signals -- written by onboarding/signal_accept.py, reviewed by a human.
+#
+# This file is machine-written. config/domains_fdm.yaml is NOT: it stays
+# hand-authored, and no tooling in this repo writes to it. Keeping the two
+# apart means a reviewer can diff what a model proposed against what people
+# wrote, and revert one without disturbing the other.
+#
+# Every entry here is `status: shadow`. A shadow signal runs and is visible
+# in the dashboard's Explore/Trace views, but datainsights/domain_registry.py
+# does not read this file, so datainsights/correlation/hypothesis.py cannot
+# resolve its category and it can never enter a Recommendation or an RM
+# worklist.
+#
+# Promoting a signal to `active` is a deliberate human act: move the entry
+# into config/domains_fdm.yaml under the owning domain. Do that only when
+# either a reviewer has justified it, or datainsights/backtest.py shows a
+# hit rate against real RM outcomes.
+# Last written: 2026-09-21 by sameera@review
+
+deposits:
+  signals:
+    transaction_amount_deviation:
+      category: TREASURY_OPPORTUNITY
+      status: shadow
+      why_now: Pattern observed on this client; flags 14% of the book and overlaps existing
+        signals by 24%.
+      hypothesis: Clients showing significant deviations in transaction amounts may be reorganizing
+        their financial activities, indicating a potential opportunity for treasury management
+        services.
+      origin: discovered
+      provenance:
+        candidate_signal_type: transaction_amount_deviation_w30_k30
+        archetype: own_history_deviation
+        proposer_confidence: 0.75
+        proposer_caveats: ''
+        screening:
+          fire_rate: 0.1378
+          clients_flagged: 46
+          max_overlap_with_existing: 0.2381
+          overlaps_with: large_incoming_payment
+        accepted_at: '2026-09-21T10:42:19+00:00'
+        accepted_by: sameera@review
+    transaction_amount_deviation_w90_k30:
+      category: TREASURY_OPPORTUNITY
+      status: shadow
+      why_now: Pattern observed on this client; flags 5% of the book and overlaps existing
+        signals by 31%.
+      hypothesis: Clients showing significant deviation in transaction amounts may be reorganizing
+        their financial activities, indicating a potential opportunity for treasury management
+        services.
+      origin: discovered
+      provenance:
+        candidate_signal_type: transaction_amount_deviation_w90_k30
+        archetype: own_history_deviation
+        proposer_confidence: 0.75
+        proposer_caveats: ''
+        screening:
+          fire_rate: 0.0489
+          clients_flagged: 18
+          max_overlap_with_existing: 0.3103
+          overlaps_with: large_incoming_payment
+        accepted_at: '2026-09-21T10:42:19+00:00'
+        accepted_by: sameera@review
+    transaction_amount_deviation_w30_k21:
+      category: TREASURY_OPPORTUNITY
+      status: shadow
+      why_now: Pattern observed on this client; flags 39% of the book and overlaps existing
+        signals by 49%.
+      hypothesis: Clients showing significant deviations in transaction amounts may be experiencing
+        changes in their operational or financial needs, indicating a potential opportunity
+        for treasury management services.
+      origin: discovered
+      provenance:
+        candidate_signal_type: transaction_amount_deviation_w30_k21
+        archetype: own_history_deviation
+        proposer_confidence: 0.75
+        proposer_caveats: ''
+        screening:
+          fire_rate: 0.3944
+          clients_flagged: 142
+          max_overlap_with_existing: 0.4856
+          overlaps_with: revenue_pattern_change
+        accepted_at: '2026-09-21T10:42:19+00:00'
+        accepted_by: sameera@review
