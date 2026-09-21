@@ -180,8 +180,14 @@ def render() -> None:
             f"`docs/ml_strategy_plan.md` T4's own next step."
         )
     else:
-        if st.button("▶ Run champion vs challenger (fdm_local)", key="ml_run_runner", width="stretch"):
-            run_module(["datainsights.ml.runner", "--profile", "fdm_local"], "ML champion/challenger run")
+        # The profile follows the schema picked above, not a fixed one --
+        # running fdm_local's comparison while the user is looking at
+        # another schema reports a result for data they did not select.
+        _ml_profile = DATA_SOURCES[schema_key].get("profile", schema_key)
+        if st.button(f"▶ Run champion vs challenger ({_ml_profile})",
+                     key="ml_run_runner", width="stretch"):
+            run_module(["datainsights.ml.runner", "--profile", _ml_profile],
+                       f"ML champion/challenger run ({_ml_profile})")
         entry = next((e for e in st.session_state.get("logs", [])
                      if e["label"] == "ML champion/challenger run"), None)
         if entry:

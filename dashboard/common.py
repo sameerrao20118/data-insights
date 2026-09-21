@@ -41,7 +41,8 @@ if str(ROOT) not in sys.path:
 DATA_DIR = ROOT / "data_generator" / "output"      # the legacy-schema dataset (config/bindings/legacy.yaml)
 EXT_DIR = ROOT / "external_events"                  # event feeds live under output_<schema>/
 INSIGHTS_DIR = ROOT / "var" / "insights"
-FDM_DATA_DIR = ROOT / "data_generator" / "output_fdm"
+# (FDM_DATA_DIR removed: the client pickers that used it now read through
+# CanonicalSource, so no module-level constant points at one schema's data.)
 TRACE_DB = ROOT / "var" / "agent_traces.db"   # R23: the agentic run record (datainsights/agent_trace.py)
 
 st.set_page_config(page_title="DataInsights — demo dashboard", page_icon="🏦", layout="wide")

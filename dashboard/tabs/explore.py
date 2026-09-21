@@ -97,8 +97,20 @@ def _render_source_data_panel(source_key: str, src: dict) -> None:
         try:
             import yaml as _yaml
 
-            with open(ROOT / "config" / "domains_fdm.yaml") as f:
+            # The signal->category registry this source actually uses.
+            # datainsights/domain_registry.py resolves it; asking that
+            # module means the panel shows what the PIPELINE would use,
+            # not a file this page picked. Reading one schema's file
+            # unconditionally showed its map under every source.
+            from datainsights import domain_registry as _dr
+
+            _domains_path = Path(_dr._DEFAULT_PATH)
+            _schema_specific = ROOT / "config" / f"domains_{source_key}.yaml"
+            if _schema_specific.exists():
+                _domains_path = _schema_specific
+            with open(_domains_path) as f:
                 domains_cfg = _yaml.safe_load(f)
+            st.caption(f"Registry: `{_domains_path.relative_to(ROOT)}`")
             sig_rows = []
             for domain, block in domains_cfg.items():
                 for sig, spec in (block.get("signals") or {}).items():
@@ -119,11 +131,26 @@ def _render_source_data_panel(source_key: str, src: dict) -> None:
             st.caption(f"Could not read the domain registry: {type(e).__name__}: {e}")
 
 
-def _render_exogenous_panel() -> None:
-    """Exogenous events are NOT per-source -- the same feed is checked against
-    whichever client book is loaded -- so this sits ALONGSIDE the per-source
-    data browser rather than inside it."""
-    ext_path = EXT_DIR / "output_fdm" / "tender_events.csv"  # R23: the declarative event feed (config/event_types.yaml)
+def _render_exogenous_panel(src: dict | None = None) -> None:
+    """The exogenous feed a source actually uses.
+
+    This previously hardcoded output_fdm/tender_events.csv and described it
+    as "shared across all sources" -- but a feed is declared per profile
+    (`event_source`), and legacy/SBA declare none at all, so the panel was
+    showing FDM's events under schemas that have none."""
+    ext_path = None
+    if src and src.get("profile"):
+        try:
+            from datainsights.runtime import build_runtime
+
+            configured = build_runtime(src["profile"]).event_source_path
+            ext_path = Path(configured) if configured else None
+        except Exception:  # noqa: BLE001 -- fall through to the default below
+            ext_path = None
+    if ext_path is None:
+        st.caption(":material/event_busy: No exogenous event feed configured for this source — "
+                   "its detectors run on endogenous signals alone.")
+        return
     n_ext = count_rows(ext_path)
     label = (f"Exogenous event feed - {n_ext:,} simulated events (shared across all sources)"
              if n_ext is not None else "Exogenous event feed - not generated yet")
@@ -364,7 +391,7 @@ def _render_fdm_live_demo_tab(key: str, src: dict) -> None:
         st.warning(f"No clients found for `{profile}` — has its data been generated?")
         return
 
-    default_idx = party_ids.index("PRTY00036") if "PRTY00036" in party_ids else 0
+    default_idx = 0  # first client of whatever schema this is -- no cross-schema default exists
     c1, c2 = st.columns([3, 1])
     with c1:
         customer = st.selectbox("Client", party_ids, index=default_idx,
@@ -476,7 +503,7 @@ def _render_fdm_trace_tab(key: str, src: dict) -> None:
         st.warning(f"No clients found for `{profile}` — has its data been generated?")
         return
 
-    default_idx = party_ids.index("PRTY00036") if "PRTY00036" in party_ids else 0
+    default_idx = 0  # first client of whatever schema this is -- no cross-schema default exists
     c1, c2 = st.columns([3, 1])
     with c1:
         prty_id = st.selectbox("Client", party_ids, index=default_idx, key=f"trace_client_{key}")
@@ -630,9 +657,9 @@ def _render_fdm_trace_tab(key: str, src: dict) -> None:
         st.markdown(f"**Strongest signal wins the category**  \n`{strongest.signal_type}` "
                    f"({strongest.domain}, magnitude {strongest.magnitude:.2f})")
         if getattr(rec, "combination_rule", None):
-            st.info(f"**Cross-domain rule fired: `{rec.combination_rule}`** — the signals present together "
-                    f"match a rule in `config/domains_fdm.yaml` `combinations:`, which sets the category "
-                    f"and hypothesis instead of the strongest signal alone.")
+            st.info(f"**Cross-domain rule fired: `{rec.combination_rule}`** — the signals present "
+                    f"together match a rule in the domain registry's `combinations:` table, which "
+                    f"sets the category and hypothesis instead of the strongest signal alone.")
             natural = _category_for(strongest.signal_type)
             from datainsights.domain_registry import matching_combination
             _rule = matching_combination({s.signal_type for s in evaluation.signals})
@@ -781,7 +808,7 @@ def render() -> None:
     st.divider()
 
     _render_source_data_panel(source_key, src)
-    _render_exogenous_panel()
+    _render_exogenous_panel(src)
 
     if src["kind"] == "full_agentic":
         _render_fdm_source(source_key, src)
