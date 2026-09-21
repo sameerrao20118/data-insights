@@ -164,6 +164,49 @@ def accept(proposals: list[SignalProposal], *, accepted_by: str,
             "domains_path": domains_path, "specs_dir": specs_dir}
 
 
+def proposals_from_review(review: dict) -> list[SignalProposal]:
+    """Rebuild SignalProposal objects from a review file written by
+    onboarding/discover_signals.py.
+
+    accept() takes proposals, but a reviewer (or the dashboard) only has
+    the JSON on disk. Reconstructing here rather than in the caller keeps
+    one definition of how a review maps back to a proposal -- and keeps
+    the dashboard out of the business of knowing that shape.
+
+    A proposal whose spec cannot be rebuilt is DROPPED, not guessed: the
+    spec decides what actually runs, so a malformed one must not become a
+    silently different detector."""
+    from detection_engine.specs.archetypes import SignalSpec, SpecError
+
+    out: list[SignalProposal] = []
+    for payload in review.get("proposals") or []:
+        if not payload.get("accepted"):
+            continue
+        spec_payload = payload.get("spec")
+        if not spec_payload:
+            continue  # pre-dating spec serialisation -- re-run discovery
+        try:
+            spec = SignalSpec(
+                signal_type=payload["proposed_name"], archetype=spec_payload["archetype"],
+                domain=spec_payload["domain"], concept=spec_payload["concept"],
+                grain=tuple(spec_payload["grain"]), params=spec_payload.get("params") or {},
+                direction=spec_payload.get("direction", "increase"),
+                origin="discovered", status="shadow",
+                notes=spec_payload.get("notes", ""),
+            )
+        except (SpecError, KeyError, TypeError):
+            continue
+        out.append(SignalProposal(
+            candidate_signal_type=payload.get("candidate_signal_type", ""),
+            archetype=payload["archetype"], accepted=True, spec=spec,
+            proposed_name=payload["proposed_name"], category=payload.get("category", ""),
+            why_now=payload.get("why_now", ""), hypothesis=payload.get("hypothesis", ""),
+            confidence=float(payload.get("confidence") or 0.0),
+            caveats=payload.get("caveats", ""), screening=payload.get("screening"),
+        ))
+    return out
+
+
 def load_discovered(domains_path: str | None = None) -> dict:
     """Read the discovered-signals config. Deliberately NOT wired into
     datainsights/domain_registry.py -- see this module's docstring. The

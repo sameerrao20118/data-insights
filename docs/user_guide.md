@@ -201,6 +201,7 @@ want to DO, not by which phase built it:
 |---|---|
 | **Overview** | See the five pipeline stages in one screen |
 | **Explore a source** | **The main RM view.** Pick a data source; browse its actual tables and previews; trace one client through every stage (including Stage 4b, the investigator's proposal); run the whole book and read the worklist — already scoped to whoever is signed in (R21), not filtered by a dropdown |
+| **Discover signals** | Find signals in a book that nobody wrote a rule for: enumerate → screen for novelty → name (local Ollama) → human-accept into **shadow**. A shadow signal is visible but structurally cannot reach an RM worklist until a human promotes it (`docs/signal_discovery_design.md`) |
 | **Onboard a source** | Add a new data asset: profile → propose → review → human-accept. The only screen that writes to `config/` |
 | **ML opportunities** | Scan a schema for ML-eligible measures, set policy, run champion vs. challenger (see `docs/ml_quickstart.md`) |
 | **How it works** | The agent-flow diagram for one client |

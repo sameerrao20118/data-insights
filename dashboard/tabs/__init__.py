@@ -8,10 +8,12 @@ point was a guess. Grouping is presentation only: PAGES stays the single
 dispatch table, so nothing about page rendering or the suite's
 parametrization changes."""
 
-from dashboard.tabs import aws, digests, explore, how_it_works, ml, onboard, overview, proofs, status, technique
+from dashboard.tabs import (aws, digests, discover, explore, how_it_works, ml, onboard, overview,
+                            proofs, status, technique)
 
 PAGES = {
     "Explore a source": explore.render,
+    "Discover signals": discover.render,
     "Digests": digests.render,
     "Onboard a source": onboard.render,
     "ML opportunities": ml.render,
@@ -29,7 +31,10 @@ PAGES = {
 # without a home shows up as a test failure rather than silently
 # disappearing from the sidebar.
 PAGE_GROUPS = [
-    ("Work", ["Explore a source", "Digests"]),
+    # Discovery sits in WORK, not UNDERSTAND: finding signals nobody wrote
+    # a rule for is a thing you DO with a book, and it is half of what
+    # distinguishes this system from a fixed rule engine.
+    ("Work", ["Explore a source", "Discover signals", "Digests"]),
     ("Set up", ["Onboard a source", "ML opportunities"]),
     ("Understand", ["Overview", "How it works", "Technique reference"]),
     ("Evidence", ["Verification proofs", "AWS target architecture", "Status"]),

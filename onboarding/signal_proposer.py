@@ -59,8 +59,17 @@ class SignalProposal:
     rejected_reason: str | None = None   # non-empty ONLY when accepted is False
 
     def to_dict(self) -> dict:
+        """JSON-safe. The spec is SERIALISED rather than dropped: a
+        reviewer accepting from the review file needs the exact spec that
+        was screened. Dropping it meant the concept, domain and grain had
+        to be guessed at accept time, which could register a detector
+        subtly different from the one the evidence was measured on."""
         payload = asdict(self)
-        payload.pop("spec", None)
+        spec = payload.pop("spec", None)
+        if spec is not None:
+            spec = dict(spec)
+            spec["grain"] = list(spec.get("grain") or ())
+        payload["spec"] = spec
         return payload
 
 
