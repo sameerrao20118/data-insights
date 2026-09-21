@@ -4,15 +4,21 @@
 
 A commercial/institutional banking Next-Best-Action (NBA) proof of
 concept, built against NatWest's Federated Data Model
-(`docs/fdm_reference.md`) and a captured engineering Decision Record
-(`docs/decision_record.md`): detect meaningful client events —
-endogenous (a client's own transactions/facilities/risk grade) and
-exogenous (external tenders/market events) — assemble them into one
-ranked, sized recommendation per client, and hand it to a Relationship
-Manager as a human-reviewed worklist. See `docs/current_state.md` for
-what's actually verified working today, and `docs/agentic_plan.md` for
-where LLM agents genuinely add capability versus where the pipeline is,
-and stays, deterministic.
+(`docs/fdm_reference.md`, `docs/fdm_natwest_model.md`) and a captured
+engineering Decision Record (`docs/decision_record.md`): detect
+meaningful client events — endogenous (a client's own
+transactions/facilities/risk grade) and exogenous (external
+tenders/market events) — assemble them into one ranked, sized
+recommendation per client, and hand it to a Relationship Manager as a
+human-reviewed worklist. See `docs/current_state.md` for what's
+actually verified working today, and `docs/agentic_plan.md` for where
+LLM agents genuinely add capability versus where the pipeline is, and
+stays, deterministic.
+
+**Key conceptual docs:** 
+- `docs/three_layers_schema_binding.md` — how physical schema, semantic model, and bindings work together
+- `docs/fdm_natwest_model.md` — NatWest FDM Kernel Classes and five banking domains
+- `docs/handling_domain_gaps.md` — strategy for adding new columns and dealing with missing FDM domains
 
 ## Pipeline
 
