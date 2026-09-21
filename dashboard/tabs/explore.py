@@ -148,22 +148,39 @@ def _render_exogenous_panel() -> None:
                        "`python -m data_generator.fdm.generate_fdm_events`.")
 
 
-def _render_fdm_worklist_tab() -> None:
+def _render_fdm_worklist_tab(key: str, src: dict) -> None:
+    profile = src["profile"]
+    generated = INSIGHTS_DIR / "fdm_rm_worklist.csv"
+    per_profile = worklist_path_for(profile)
+
     rc1, rc2 = st.columns([1, 3])
     with rc1:
-        if st.button("▶ Run whole-book pipeline", width="stretch"):
-            run_module(["agents.demo_fdm_scenario"], "FDM whole-book pipeline")
-    fdm_path = INSIGHTS_DIR / "fdm_rm_worklist.csv"
-    if not fdm_path.exists():
-        st.warning("No FDM worklist yet — click **Run whole-book pipeline** above, or run "
-                   "`python -m agents.demo_fdm_scenario` (writes `var/insights/fdm_rm_worklist.csv`).")
+        if st.button("▶ Run whole-book pipeline", width="stretch", key=f"run_book_{key}"):
+            run_module(["agents.demo_fdm_scenario", "--profile", profile],
+                       f"Whole-book pipeline ({profile})")
+            # Every local profile shares var/insights and the generator
+            # always writes fdm_rm_worklist.csv, so two profiles overwrote
+            # each other. Snapshot to a per-profile name immediately after
+            # the run, so each source's tab shows ITS book.
+            if generated.exists():
+                import shutil
+
+                shutil.copyfile(generated, per_profile)
+
+    if not per_profile.exists():
+        st.warning(
+            f"No worklist for `{profile}` yet — click **Run whole-book pipeline** above, or run "
+            f"`python -m agents.demo_fdm_scenario --profile {profile}` "
+            f"(writes `var/insights/fdm_rm_worklist.csv`)."
+        )
         return
 
-    df = read_csv(fdm_path)
+    df = read_csv(per_profile)
     st.caption(
-        f"Reading `{fdm_path.relative_to(ROOT)}` — {len(df):,} recommendations from the FDM "
-        "agentic pipeline (`agents/orchestrator.py`). Every revenue figure is an illustrative "
-        "planning assumption from `config/rules.yaml`, not this bank's pricing or a quote."
+        f"Reading `{per_profile.relative_to(ROOT)}` — {len(df):,} recommendations from "
+        f"profile `{profile}` through `agents/orchestrator.py`. Every revenue figure is an "
+        "illustrative planning assumption from `config/rules.yaml`, not this bank's pricing "
+        "or a quote."
     )
     revenue = df["indicative_revenue_eur"].dropna()
     m1, m2, m3, m4 = st.columns(4)
@@ -258,7 +275,7 @@ def _render_fdm_worklist_tab() -> None:
                 from agents.rm_copilot_agent import ask
                 from datainsights.runtime import build_runtime
 
-                model = get_model(build_runtime("fdm_local").model_config)
+                model = get_model(build_runtime(profile).model_config)
                 answer = ask(question, row.to_dict(), model)
                 st.session_state[f"copilot_answer_{chosen_rank}"] = answer
             except Exception as e:  # noqa: BLE001 -- dashboard must never crash on a copilot failure
@@ -300,12 +317,13 @@ def _render_fdm_worklist_tab() -> None:
             st.dataframe(pd.DataFrame(history), width="stretch", hide_index=True)
 
 
-def _render_fdm_live_demo_tab() -> None:
+def _render_fdm_live_demo_tab(key: str, src: dict) -> None:
     """Structured, not a stdout dump: runs the SAME evaluate_client() the
     Trace tab runs, with narrate=True, and renders each agent's validated
     narrative as its own card."""
     from datetime import timedelta
 
+    profile = src["profile"]
     st.caption(
         "The SAME pipeline as **Trace one client**, with narration switched on: each domain "
         "agent makes a REAL local Ollama call to write its observed facts, hypothesis and "
@@ -314,19 +332,23 @@ def _render_fdm_live_demo_tab() -> None:
         "failure. Slower on purpose (~15-25s). **The recommendation is identical either way** - "
         "the LLM narrates, it never decides the category, sizing or score."
     )
-    party_path = FDM_DATA_DIR / "kernel" / "party.csv"
-    if not party_path.exists():
-        st.warning("No FDM data yet - run `python -m data_generator.fdm.generate_fdm --seed 42`.")
+    try:
+        party_ids = _client_ids(profile, src["picker_concept"])
+    except Exception as e:  # noqa: BLE001 -- an unreadable source is reported, never a crash
+        st.warning(f"Cannot list clients for `{profile}`: {type(e).__name__}: {e}")
+        return
+    if not party_ids:
+        st.warning(f"No clients found for `{profile}` — has its data been generated?")
         return
 
-    party_ids = sorted(read_csv(party_path)["PRTY_ID"].unique().tolist())
     default_idx = party_ids.index("PRTY00036") if "PRTY00036" in party_ids else 0
     c1, c2 = st.columns([3, 1])
     with c1:
-        customer = st.selectbox("Client", party_ids, index=default_idx, key="narrate_client")
+        customer = st.selectbox("Client", party_ids, index=default_idx,
+                                key=f"narrate_client_{key}")
     with c2:
         st.markdown("&nbsp;")
-        go = st.button("Run live narration", width="stretch", key="narrate_go")
+        go = st.button("Run live narration", width="stretch", key=f"narrate_go_{key}")
 
     if go:
         if not ollama_reachable():
@@ -341,20 +363,20 @@ def _render_fdm_live_demo_tab() -> None:
                 from datainsights.runtime import build_runtime
                 from external_events.exposure_qualifier import load_events
 
-                rt = build_runtime("fdm_local")
+                rt = build_runtime(profile)
                 event = load_events(rt.event_source_path)[0] if rt.event_source_path else None
                 as_of = (event.event_date + timedelta(days=90)) if event else None
                 evaluation = evaluate_client(
                     customer, source=rt.source, rules=rt.rules, as_of=as_of, event=event,
                     model=get_model(rt.model_config), narrate=True,
-                    binding_name=rt.binding_name or "fdm")
-                st.session_state["narrate_result"] = (customer, evaluation)
+                    binding_name=rt.binding_name)
+                st.session_state[f"narrate_result_{key}"] = (customer, evaluation)
             except Exception as e:  # noqa: BLE001 -- never kill the tab on a model failure
-                st.session_state.pop("narrate_result", None)
+                st.session_state.pop(f"narrate_result_{key}", None)
                 st.error(f"Live narration failed: {type(e).__name__}: {e}")
                 return
 
-    cached = st.session_state.get("narrate_result")
+    cached = st.session_state.get(f"narrate_result_{key}")
     if not cached or cached[0] != customer:
         st.info("Pick a client and click **Run live narration**. Nothing needs to have been run "
                 "first. Use **Trace one client** for the fast, no-LLM view of the same pipeline.")
@@ -408,12 +430,13 @@ def _render_fdm_live_demo_tab() -> None:
                    f"identical with or without the LLM (`tests/test_orchestrator.py` asserts it).")
 
 
-def _render_fdm_trace_tab() -> None:
+def _render_fdm_trace_tab(key: str, src: dict) -> None:
     """The 'where does it all connect' view. Everything rendered here is
     already computed by agents/orchestrator.py's evaluate_client() -- the
     correlation was never missing from the pipeline, only from the UI."""
     from datetime import date, timedelta
 
+    profile = src["profile"]
     st.caption(
         "**Start here — you do NOT need to run the whole book first.** One client, traced "
         "through every stage: each domain agent's own evidence → the shared signal bus → the "
@@ -421,19 +444,22 @@ def _render_fdm_trace_tab() -> None:
         "sizes ONE offer → the card the RM sees. Batch mode (no LLM), so it returns in about "
         "a second."
     )
-    party_path = FDM_DATA_DIR / "kernel" / "party.csv"
-    if not party_path.exists():
-        st.warning("No FDM data yet - run `python -m data_generator.fdm.generate_fdm --seed 42`.")
+    try:
+        party_ids = _client_ids(profile, src["picker_concept"])
+    except Exception as e:  # noqa: BLE001 -- an unreadable source is reported, never a crash
+        st.warning(f"Cannot list clients for `{profile}`: {type(e).__name__}: {e}")
+        return
+    if not party_ids:
+        st.warning(f"No clients found for `{profile}` — has its data been generated?")
         return
 
-    party_ids = sorted(read_csv(party_path)["PRTY_ID"].unique().tolist())
     default_idx = party_ids.index("PRTY00036") if "PRTY00036" in party_ids else 0
     c1, c2 = st.columns([3, 1])
     with c1:
-        prty_id = st.selectbox("Client", party_ids, index=default_idx, key="trace_client")
+        prty_id = st.selectbox("Client", party_ids, index=default_idx, key=f"trace_client_{key}")
     with c2:
         st.markdown("&nbsp;")
-        go = st.button("🔍 Trace this client", width="stretch", key="trace_go")
+        go = st.button("🔍 Trace this client", width="stretch", key=f"trace_go_{key}")
 
     if go:
         with st.spinner(f"Tracing {prty_id} through the pipeline..."):
@@ -442,19 +468,19 @@ def _render_fdm_trace_tab() -> None:
                 from datainsights.runtime import build_runtime
                 from external_events.exposure_qualifier import load_events
 
-                rt = build_runtime("fdm_local")
+                rt = build_runtime(profile)
                 event = load_events(rt.event_source_path)[0] if rt.event_source_path else None
                 as_of = (event.event_date + timedelta(days=90)) if event else date.today()
                 evaluation = evaluate_client(
                     prty_id, source=rt.source, rules=rt.rules, as_of=as_of, event=event,
-                    narrate=False, binding_name=rt.binding_name or "fdm")
-                st.session_state["trace_result"] = (prty_id, evaluation, event, as_of)
+                    narrate=False, binding_name=rt.binding_name)
+                st.session_state[f"trace_result_{key}"] = (prty_id, evaluation, event, as_of)
             except Exception as e:  # noqa: BLE001 -- a trace failure must not kill the tab
-                st.session_state.pop("trace_result", None)
+                st.session_state.pop(f"trace_result_{key}", None)
                 st.error(f"Trace failed: {type(e).__name__}: {e}")
                 return
 
-    cached = st.session_state.get("trace_result")
+    cached = st.session_state.get(f"trace_result_{key}")
     if not cached or cached[0] != prty_id:
         st.info("Pick a client and click **Trace this client**. Nothing else needs to have been "
                "run first — this reads the data directly.")
@@ -655,21 +681,42 @@ def _render_fdm_trace_tab() -> None:
                   "evidence before its text is accepted.")
 
 
-def _render_fdm_source() -> None:
+def _client_ids(profile: str, concept: str) -> list[str]:
+    """Client ids for the picker, read through CanonicalSource.
+
+    Previously this read data_generator/output_fdm/kernel/party.csv and its
+    PRTY_ID column directly -- which worked for exactly one schema. Going
+    through the binding means the picker works for any profile, and the
+    dashboard stops depending on one schema's physical table and column
+    names (the coupling tests/test_no_source_specific_coupling.py forbids
+    elsewhere)."""
+    from datainsights.runtime import build_runtime
+    from datainsights.semantic.binding import load_binding
+    from datainsights.semantic.canonical import CanonicalSource
+
+    runtime = build_runtime(profile)
+    canonical = CanonicalSource(runtime.source, load_binding(runtime.binding_name))
+    frame = canonical.read(concept)
+    return sorted(frame["party_id"].dropna().unique().tolist())
+
+
+def _render_fdm_source(key: str, src: dict) -> None:
+    profile = src["profile"]
     st.caption(
         "Runs through `agents/orchestrator.py`: canonical schema, declarative event types, "
         "deterministic correlation. **The three tabs below are independent — run any one "
         "without the others.** Trace = understand the flow for one client; Whole-book = the "
         "volume view an RM triages; Live narration = the same one client with real LLM calls."
     )
+    st.caption(f"Profile: `{profile}` — every tab below runs against this source, not a fixed one.")
     trace_tab, vol_tab, depth_tab = st.tabs(
         ["🔍 Trace one client", "📋 Whole-book worklist", "🔎 Live narration"])
     with trace_tab:
-        _render_fdm_trace_tab()
+        _render_fdm_trace_tab(key, src)
     with vol_tab:
-        _render_fdm_worklist_tab()
+        _render_fdm_worklist_tab(key, src)
     with depth_tab:
-        _render_fdm_live_demo_tab()
+        _render_fdm_live_demo_tab(key, src)
 
 
 def _render_proof_only_source(key: str, src: dict) -> None:
@@ -712,6 +759,6 @@ def render() -> None:
     _render_exogenous_panel()
 
     if src["kind"] == "full_agentic":
-        _render_fdm_source()
+        _render_fdm_source(source_key, src)
     else:
         _render_proof_only_source(source_key, src)

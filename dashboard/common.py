@@ -76,6 +76,11 @@ DATA_SOURCES = {
     "fdm": {
         "label": "FDM synthetic book",
         "kind": "full_agentic",
+        "profile": "fdm_local",
+        # Canonical concept + field the client picker reads to list clients.
+        # Read through CanonicalSource, so the picker works for any binding
+        # rather than reading one schema's physical party.csv/PRTY_ID.
+        "picker_concept": "Party",
         "data_dir": ROOT / "data_generator" / "output_fdm" / "kernel",
         # data_dir is the ML scan's non-recursive root; data_root is the whole
         # source tree for the data browser (FDM splits tables across kernel/ and lending/).
@@ -88,8 +93,16 @@ DATA_SOURCES = {
         ),
     },
     "legacy": {
+        # R23 unified the pipeline -- the same agents/orchestrator.py path
+        # runs this schema, verified by running it: 167 recommendations
+        # against legacy CL00xxx clients. This entry stayed "proof_only"
+        # long after that was true, so the panel told the user no
+        # whole-book generator was wired up while the box directly above
+        # said the opposite. The three tabs are now profile-driven.
         "label": "Legacy schema",
-        "kind": "proof_only",
+        "kind": "full_agentic",
+        "profile": "legacy_local",
+        "picker_concept": "Party",
         "data_dir": ROOT / "data_generator" / "output",
         "data_root": ROOT / "data_generator" / "output",
         "description": (
@@ -106,8 +119,12 @@ DATA_SOURCES = {
         ),
     },
     "sba": {
+        # Stays proof_only deliberately: unlike legacy, this has not been
+        # verified end-to-end through the whole-book path. Flip it only
+        # after actually running it, not by analogy with legacy.
         "label": "SBA — real commercial data",
         "kind": "proof_only",
+        "profile": "sba_local",
         "data_dir": ROOT / "data_generator" / "output_fdm_sba",
         "data_root": ROOT / "data_generator" / "output_fdm_sba",
         "description": (
@@ -126,6 +143,20 @@ DATA_SOURCES = {
         ),
     },
 }
+
+
+def worklist_path_for(profile: str):
+    """Where a profile's whole-book worklist CSV lands.
+
+    agents/demo_fdm_scenario.py writes `fdm_rm_worklist.csv` into the
+    profile's own out_dir, and every local profile shares
+    var/insights -- so running two profiles overwrote each other's
+    worklist. The dashboard now reads a per-profile copy, and the run
+    button snapshots the generated file to that name. The generator's own
+    output path is deliberately left alone: changing it would break
+    docs/current_state.md's documented commands and every existing
+    reference to var/insights/fdm_rm_worklist.csv."""
+    return INSIGHTS_DIR / f"worklist_{profile}.csv"
 
 
 TECHNIQUE_ROWS = [
