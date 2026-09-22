@@ -316,10 +316,19 @@ other than pandas:
 
 Gaps found during implementation, not part of the original set:
 
-- A dashboard tab for stage D — acceptance is currently a Python call
-- Promotion tooling — moving a shadow signal to `domains_fdm.yaml` is a manual edit
-- Combination-rule proposals — co-occurrence lift is computed and reported
-  (`signal_screener.co_occurrence`), but nothing proposes the rule text
+- ~~A dashboard tab for stage D~~ — **built**: `dashboard/tabs/discover.py`,
+  a "Discover signals" page under WORK. Enumerate + screen, review what
+  survived and why each rejection happened, accept into shadow with the
+  reviewer's name recorded. Also surfaces the shadow register.
+- **Promotion tooling** — moving a shadow signal to `domains_fdm.yaml` is
+  still a manual edit. Deliberately unautomated for now: promotion is the
+  step that lets a machine-proposed rule reach an RM.
+- **Combination-rule proposals** — co-occurrence lift is computed, reported
+  in the CLI and shown on the page, but nothing proposes the rule *text*.
+- **Category proposals** — out of scope by recommendation 9. A new NBA
+  category is a governance decision about what the bank offers, not
+  something a local model should mint. Adding one is a `categories.yaml`
+  edit today.
 
 ### Two rejected options, recorded so they are not revisited by accident
 
