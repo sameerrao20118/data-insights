@@ -191,10 +191,20 @@ def main() -> int:
     proposals = []
     if not args.no_llm and passed:
         print(f"\nStage C -- proposing (local Ollama, max {args.max_proposals})")
-        from agents.model_factory import get_model
+        from dataclasses import replace
+
+        from agents.model_factory import get_model, model_id_for
         from onboarding.signal_proposer import propose_signals
 
-        model = get_model(runtime.model_config)
+        # The proposer's output becomes pipeline configuration, so it needs
+        # a model that can reliably fill a structured-output schema -- a
+        # stricter requirement than narration. The profile decides which
+        # (llm.task_models.proposer); this falls back to llm.model.
+        proposer_model_id = model_id_for("proposer", args.profile)
+        if proposer_model_id != runtime.model_config.model_id:
+            print(f"  proposer model: {proposer_model_id} "
+                  f"(profile default is {runtime.model_config.model_id})")
+        model = get_model(replace(runtime.model_config, model_id=proposer_model_id))
 
         screens = {r.signal_type: r for r in results}
         shortlist = sorted(

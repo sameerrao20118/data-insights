@@ -52,6 +52,24 @@ def default_base_url() -> str:
     return active_profile().llm.base_url or "http://localhost:11434"
 
 
+def model_id_for(task: str, profile_name: str | None = None) -> str:
+    """The model this task should use: the profile's `llm.task_models[task]`
+    if it names one, else `llm.model`.
+
+    Different tasks need different capabilities, and the difference is
+    measurable. A proposer must fill a structured-output schema whose
+    result becomes pipeline configuration; a narrator writes prose that is
+    validated afterwards in Python. A model can be fine at the second and
+    unusable at the first -- qwen2.5:7b is exactly that, 0/4 on the
+    proposer schema across two different candidates.
+
+    Still R20-compliant: the tag lives in the profile, never in Python."""
+    from datainsights.runtime import active_profile
+
+    llm = active_profile(profile_name).llm
+    return llm.task_models.get(task) or llm.model
+
+
 @dataclass(frozen=True)
 class ModelConfig:
     mode: Literal["local", "model_gateway"]

@@ -141,6 +141,22 @@ class LLMConfig(BaseModel):
     # paid provider") -- a one-value Literal makes any other fallback
     # unconfigurable, not merely unimplemented.
     fallback: Literal["deterministic_template"] = "deterministic_template"
+    # Per-task model overrides, e.g. {"proposer": "llama3.1:8b"}. `model`
+    # above stays the default for every task that has no entry here.
+    #
+    # Why this exists, measured rather than assumed: qwen2.5:7b -- the
+    # default -- reasons correctly in prose but fails to invoke a
+    # structured-output tool. Probed four times on each of two different
+    # candidates, it produced usable output 0/4 both times, while
+    # llama3.1:8b managed 4/4 and was faster. A proposer whose output
+    # becomes pipeline configuration needs a model that can actually fill
+    # the schema; a narrator does not.
+    #
+    # This does NOT weaken R20 (tests/test_model_id_single_source.py): the
+    # rule is that no PYTHON file names a model tag. Profiles are where a
+    # tag legitimately lives, and this keeps every tag in the profile.
+    task_models: dict[str, str] = Field(default_factory=dict)
+
     @model_validator(mode="after")
     def _enforce_local_only(self) -> "LLMConfig":
         if self.allow_remote_inference:
@@ -151,11 +167,14 @@ class LLMConfig(BaseModel):
             raise ValueError(
                 "allow_paid_fallback=true is not authorized in this phase"
             )
-        if self.model.endswith("-cloud"):
-            raise ValueError(
-                f"model '{self.model}' is an Ollama cloud-routed tag, not local "
-                "inference -- not permitted under this project's cost policy"
-            )
+        # Every tag, default AND per-task: an override must not become a
+        # way around the cost policy.
+        for label, tag in [("model", self.model)] + sorted(self.task_models.items()):
+            if tag.endswith("-cloud"):
+                raise ValueError(
+                    f"{label} '{tag}' is an Ollama cloud-routed tag, not local "
+                    "inference -- not permitted under this project's cost policy"
+                )
         if self.provider == "ollama":
             if not self.base_url:
                 raise ValueError("ollama provider requires base_url")

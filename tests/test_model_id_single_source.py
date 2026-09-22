@@ -22,6 +22,9 @@ ALLOWED = {
     "tests/test_domain_agent.py",
     # profile fixtures ARE profiles -- the id legitimately lives there
     "tests/test_runtime.py",
+    # this file: the task_models refusal test below likewise has to name a
+    # "-cloud" tag in order to assert it is rejected
+    "tests/test_model_id_single_source.py",
 }
 
 
@@ -56,3 +59,28 @@ def test_default_model_config_reads_the_active_profile():
 def test_profile_selection_changes_the_default(monkeypatch):
     monkeypatch.setenv("DATAINSIGHTS_PROFILE", "sba_local")
     assert ModelConfig(mode="local").model_id == active_profile("sba_local").llm.model
+
+
+def test_task_models_are_read_from_the_profile_not_python():
+    """Per-task model selection must not reintroduce the problem R20
+    solved. model_id_for() resolves a task's tag from the profile; no
+    Python file may name one (the scan above already enforces that)."""
+    from agents.model_factory import model_id_for
+
+    profile = active_profile()
+    for task, expected in (profile.llm.task_models or {}).items():
+        assert model_id_for(task) == expected
+    # An unmapped task falls back to the profile default, never to a literal.
+    assert model_id_for("a_task_nobody_configured") == profile.llm.model
+
+
+def test_a_cloud_tag_is_refused_in_a_task_override_too():
+    """task_models must not become a way around the cost policy: the same
+    -cloud refusal that guards `model` has to guard every override."""
+    import pytest
+
+    from datainsights.config import LLMConfig
+
+    with pytest.raises(ValueError, match="cloud-routed"):
+        LLMConfig(provider="ollama", base_url="http://127.0.0.1:11434",
+                  model="qwen2.5:7b", task_models={"proposer": "gpt-oss:20b-cloud"})

@@ -30,6 +30,16 @@ llm:
   allow_remote_inference: false
   allow_paid_fallback: false
   fallback: deterministic_template
+  # Per-task model overrides. `model` above stays the default.
+  #
+  # proposer: onboarding/signal_proposer.py's output becomes pipeline
+  # configuration, so it must reliably fill a structured-output schema.
+  # Probed 4x on each of two candidates: qwen2.5:7b managed 0/4 (it
+  # reasons correctly in prose, then fails the tool call), llama3.1:8b
+  # 4/4 and faster. gpt-oss:20b is also 4/4 but ~3x slower and rated a
+  # weak candidate 0.90 where llama3.1 rated it 0.12.
+  task_models:
+    proposer: llama3.1:8b
 state:
   backend: sqlite
   path: var/agent_traces.db

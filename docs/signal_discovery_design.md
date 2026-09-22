@@ -327,3 +327,39 @@ Gaps found during implementation, not part of the original set:
 |---|---|
 | LLM generates detector *code* | Demos faster; unauditable and unmergeable in a bank. The value of the design is that a recommendation traces to a rule a human can read |
 | Port the existing 9 detectors as a prerequisite | Unnecessary. Spec and Python detectors coexist; port later if useful, proven by golden-equivalence tests the way R23 did |
+
+---
+
+## Model selection for the proposer (measured)
+
+Stage C's output becomes pipeline configuration, so it must reliably fill
+a structured-output schema. That is a stricter requirement than narration,
+where prose is validated in Python afterwards.
+
+Probed against the real proposer schema, 4 runs each, on two different
+candidates (a deviation rule and a dormancy rule), all local Ollama:
+
+| Model | Structured output | Category stable | Notes |
+|---|---|---|---|
+| `llama3.1:8b` | **4/4 both candidates** | yes | ~2.4s. Rated the weak candidate 0.12 and the strong one 0.80 — it discriminates |
+| `gpt-oss:20b` | 4/4 both candidates | yes | ~7-9s, ~3x slower; rated the weak candidate 0.90, which is worse judgement |
+| `qwen2.5:7b` | **0/4 both candidates** | — | Reasons correctly in prose, then fails the tool call. A single earlier success was luck |
+| `mistral:7b` | 0/4 | — | Emits correct JSON as text; does not support ToolChoice |
+| `deepseek-r1` | 0/4 | — | Reasoning model, returns markdown; ~52s |
+| `llama3.2:3b` | works, poor | — | Confidence 0.00, generic names |
+
+So the profiles set `llm.task_models.proposer: llama3.1:8b` while
+`llm.model` stays `qwen2.5:7b` for narration. Observable effect: with
+qwen2.5 the three surviving candidates all came back under ONE name
+(`transaction_amount_deviation`); with llama3.1 they are named distinctly
+per parameter set.
+
+This does not weaken R20 (`tests/test_model_id_single_source.py`): that
+rule forbids a model tag in **Python**, and every tag still lives in a
+profile. The `-cloud` refusal applies to per-task overrides too, so an
+override cannot become a route around the cost policy.
+
+**Not claimed:** that llama3.1:8b produces *better business judgement*.
+What was measured is reliability of the structured call and discrimination
+between a strong and a weak candidate. Judgement quality needs RM outcome
+labels, which do not exist.
