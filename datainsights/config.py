@@ -54,7 +54,10 @@ class SourceConfig(BaseModel):
     # closed set, cross-checked against the backend below -- a cloud
     # backend claiming the local-free tier is a contradiction the loader
     # refuses, rather than a label nobody looks at.
-    cost_policy: Literal["no_cost_local_files", "no_cost_until_deployed_not_run", "verified_trial_only"]
+    # "paid_authorized_deployment": a real, billed AWS source -- valid only on
+    # a profile carrying cost.paid_authorization (Profile validator below).
+    cost_policy: Literal["no_cost_local_files", "no_cost_until_deployed_not_run", "verified_trial_only",
+                         "paid_authorized_deployment"]
     # Which semantic binding (config/bindings/<name>.yaml) maps this source's
     # physical entities to the canonical model. None = legacy pipeline, which
     # predates the semantic model and reads entity_map_ref directly.
@@ -131,9 +134,16 @@ class LLMConfig(BaseModel):
     # "model_gateway": constructs and validates; agents/model_factory.get_model()
     # raises NotImplementedError for it until Stage 3 is authorized (D4,
     # docs/decision_record.md) -- never silently routes to a real gateway.
-    provider: Literal["ollama", "model_gateway"]
+    # "bedrock": Amazon Bedrock, authorized 2026-10-23 for the AgentCore
+    # deployment ONLY (docs/aws_deployment.md). Profile-level validation
+    # (Profile._paid_inference_is_deployment_only) refuses it on any profile
+    # that is not runtime.target=agentcore with a dated cost.paid_authorization,
+    # and get_model() additionally needs the deployment-side key
+    # DATAINSIGHTS_PAID_AWS_AUTHORIZED=1, which only Terraform sets.
+    provider: Literal["ollama", "model_gateway", "bedrock"]
     base_url: Optional[str] = None
     model: str
+    region: Optional[str] = None     # bedrock only; defaults to the runtime's AWS_REGION
     allow_remote_inference: bool = False
     allow_paid_fallback: bool = False
     # R14: was a free str nothing read. The deterministic template is the
@@ -159,7 +169,11 @@ class LLMConfig(BaseModel):
 
     @model_validator(mode="after")
     def _enforce_local_only(self) -> "LLMConfig":
-        if self.allow_remote_inference:
+        # Bedrock IS remote inference -- the profile must say so explicitly,
+        # and no other provider may.
+        if self.provider == "bedrock" and not self.allow_remote_inference:
+            raise ValueError("provider=bedrock is remote inference -- declare allow_remote_inference: true")
+        if self.allow_remote_inference and self.provider != "bedrock":
             raise ValueError(
                 "allow_remote_inference=true is not authorized in this phase"
             )
@@ -230,16 +244,29 @@ class MonitorConfig(BaseModel):
     lookback_ref: Optional[str] = None
 
 
+class PaidAuthorization(BaseModel):
+    """Who lifted the paid-services block, when, and for what. Only the
+    AgentCore deployment may carry one (Profile._paid_inference_is_deployment_only);
+    a local profile flipping the flags without it is still refused below."""
+    scope: Literal["aws_agentcore_bedrock"]
+    authorized_by: str = Field(min_length=1)
+    authorized_on: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")   # ISO date -- a decision record, not a timestamp
+    reference: str = Field(min_length=1)                         # where the decision is written down
+
+
 class CostConfig(BaseModel):
     paid_llm_calls_allowed: bool = False
     paid_cloud_services_allowed: bool = False
+    paid_authorization: Optional[PaidAuthorization] = None
 
     @model_validator(mode="after")
     def _hard_block_paid(self) -> "CostConfig":
         # Defense in depth: even if someone edits a profile YAML to flip
         # these, the loader still refuses. This is a POC-wide constraint,
-        # not something a config file alone should be able to lift.
-        if self.paid_llm_calls_allowed or self.paid_cloud_services_allowed:
+        # not something a config file alone should be able to lift -- the
+        # only exception is a recorded PaidAuthorization, which Profile
+        # then confines to the AgentCore deployment.
+        if (self.paid_llm_calls_allowed or self.paid_cloud_services_allowed) and self.paid_authorization is None:
             raise ValueError(
                 "paid_llm_calls_allowed / paid_cloud_services_allowed must be "
                 "false -- no paid model or cloud service calls are authorized "
@@ -278,6 +305,22 @@ class Profile(BaseModel):
     monitor: MonitorConfig
     cost: CostConfig
     identity: IdentityConfig = IdentityConfig()
+
+    @model_validator(mode="after")
+    def _paid_inference_is_deployment_only(self) -> "Profile":
+        """The paid lift is scoped to ONE place: the AgentCore deployment.
+        A local or dashboard profile can never reach Bedrock, whatever its
+        YAML says."""
+        if self.source.cost_policy == "paid_authorized_deployment" and self.cost.paid_authorization is None:
+            raise ValueError("source.cost_policy=paid_authorized_deployment requires cost.paid_authorization")
+        if self.cost.paid_authorization is not None and self.runtime.target != "agentcore":
+            raise ValueError("cost.paid_authorization is only valid on a runtime.target=agentcore profile")
+        if self.llm.provider == "bedrock":
+            if self.runtime.target != "agentcore":
+                raise ValueError("llm.provider=bedrock is only permitted on a runtime.target=agentcore profile")
+            if not (self.cost.paid_llm_calls_allowed and self.cost.paid_authorization):
+                raise ValueError("llm.provider=bedrock requires cost.paid_llm_calls_allowed with a paid_authorization")
+        return self
 
 
 class SnowflakeConnectionParams(BaseModel):

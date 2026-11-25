@@ -1,56 +1,75 @@
-# The AgentCore-shaped counterpart to fdm_local.yaml (docs/generalization_plan.md
-# Phase 0/3). Both profiles drive the exact same code
-# (agents/entrypoint.py's invoke(), agents/orchestrator.py, every
-# detector) -- nothing here is a second implementation, only a
-# different composition of source/model/state/output backends.
+# The AgentCore-deployed counterpart to fdm_local.yaml (docs/aws_deployment.md).
+# Both profiles drive the exact same code (agents/entrypoint.py's invoke(),
+# agents/orchestrator.py, every detector) -- nothing here is a second
+# implementation, only a different composition of source/model/state/output
+# backends.
 #
-# `python -m agents.demo_fdm_scenario --profile fdm_agentcore` VALIDATES
-# this profile (every field-level check in datainsights/config.py runs)
-# and CONSTRUCTS as far as it honestly can, then raises a plain
-# NotImplementedError naming the exact first blocking reason
-# (source.backend=s3_parquet needs a real s3_uri + AWS credentials) --
-# never a silent fallback to local files. This is the mechanical proof
-# that "local Ollama" and "AgentCore" are the same pipeline wired to two
-# different, honestly-gated sets of backends, not two codebases to keep
-# in sync. See tests/test_runtime.py and tests/test_entrypoint.py's
-# agentcore_entrypoint-vs-invoke equivalence test.
+# Every ${VAR} is set on the AgentCore Runtime by
+# infra/terraform/stacks/30-agents (datainsights/runtime.py::_expand_env).
+# Loading this profile without them raises naming the missing variable --
+# never a placeholder that looks like it works.
 #
-# NOT RUN: no s3_uri below points at a real bucket, no AWS credentials
-# are configured, and this repo has never actually deployed to AgentCore
-# Runtime -- per CLAUDE.md, that requires your explicit authorization.
+# Source: the curated data-mesh lake -- one Glue database per contract
+# `domain:` (kernel, lending), read through Athena. tests/test_aws_read_path.py
+# proves the whole book is identical through this read path (DuckDB stands
+# in for Athena). Real Athena is NOT RUN until you apply the stacks.
+#
+# Paid inference: Bedrock was authorized on 2026-10-23 for THIS deployment
+# only (cost.paid_authorization below). Two keys are needed to reach it:
+# this profile, and DATAINSIGHTS_PAID_AWS_AUTHORIZED=1, which only Terraform
+# sets on the runtime. Local profiles remain hard-blocked
+# (datainsights/config.py).
 
 config_version: 1
 profile: fdm_agentcore
 runtime:
   target: agentcore
 source:
-  backend: s3_parquet
+  backend: glue_athena
   entity_map_ref: config/entities_fdm.yaml
   binding: fdm
   access: read_only
-  cost_policy: no_cost_until_deployed_not_run
-  s3_uri: "s3://REPLACE-ME-bucket/fdm/"
+  cost_policy: paid_authorized_deployment
+  connection_ref: ATHENA                       # ATHENA_REGION, ATHENA_S3_STAGING_DIR
+  glue_database: ${DATAINSIGHTS_GLUE_DB_KERNEL}
+  athena_workgroup: ${DATAINSIGHTS_ATHENA_WORKGROUP}
+  domain_schema_map:
+    kernel: ${DATAINSIGHTS_GLUE_DB_KERNEL}
+    lending: ${DATAINSIGHTS_GLUE_DB_LENDING}
+  statement_row_limit: 500000
+  query_timeout_seconds: 120
 analytics:
   backend: duckdb_local
 llm:
-  provider: model_gateway
-  model: REPLACE-ME-internal-model-id
-  allow_remote_inference: false
+  provider: bedrock
+  model: ${DATAINSIGHTS_BEDROCK_MODEL_ID}      # Terraform variable bedrock_model_id -- the one place it is chosen
+  region: ${AWS_REGION}
+  allow_remote_inference: true
   allow_paid_fallback: false
   fallback: deterministic_template
 event_source:
   backend: s3
-  s3_uri: "s3://REPLACE-ME-bucket/events/"
+  s3_uri: ${DATAINSIGHTS_EVENTS_S3_URI}
 state:
   backend: dynamodb
-  table_name: REPLACE-ME-agent-traces-table
+  table_name: ${DATAINSIGHTS_LEDGER_TABLE}
 output:
   backend: s3
-  s3_uri: "s3://REPLACE-ME-bucket/insights/"
+  s3_uri: ${DATAINSIGHTS_INSIGHTS_S3_URI}
 monitor:
   enabled: false
   interval_minutes: 60
   max_concurrent_runs: 1
+identity:
+  provider: local_dev
+  user: agentcore_service
+  role: supervisor
+  rm_ids: []
 cost:
-  paid_llm_calls_allowed: false
-  paid_cloud_services_allowed: false
+  paid_llm_calls_allowed: true
+  paid_cloud_services_allowed: true
+  paid_authorization:
+    scope: aws_agentcore_bedrock
+    authorized_by: project owner (session 2026-10-23)
+    authorized_on: "2026-10-23"
+    reference: docs/aws_deployment.md

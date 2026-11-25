@@ -19,8 +19,16 @@ Ollama tags and non-localhost hosts) BEFORE constructing anything --
 the same safety check narrative/ollama_narrator.py already benefits from,
 reused rather than reimplemented.
 
-The non-local branch is intentionally NotImplementedError, not a working
-Bedrock/Model Gateway call: CLAUDE.md's "No paid model or cloud calls" and
+The "bedrock" branch was authorized on 2026-10-23 for the AgentCore
+deployment only (docs/aws_deployment.md). It needs two independent keys:
+the profile must be an agentcore profile carrying a dated
+cost.paid_authorization (datainsights/config.py refuses anything else), and
+the process must have DATAINSIGHTS_PAID_AWS_AUTHORIZED=1 in its
+environment -- set by infra/terraform on the AgentCore Runtime and nowhere
+else. A laptop that loads the agentcore profile still cannot call Bedrock.
+
+The "model_gateway" branch is intentionally NotImplementedError, not a working
+Model Gateway call: CLAUDE.md's "No paid model or cloud calls" and
 "AWS/Bedrock/AgentCore adapters are contract-and-mock only until
 explicitly authorized" both apply. Verified this session (not assumed):
 strands-agents==1.55.1 dry-run installs cleanly on this machine's Python
@@ -30,6 +38,7 @@ strands-agents==1.55.1 dry-run installs cleanly on this machine's Python
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -72,10 +81,14 @@ def model_id_for(task: str, profile_name: str | None = None) -> str:
 
 @dataclass(frozen=True)
 class ModelConfig:
-    mode: Literal["local", "model_gateway"]
+    mode: Literal["local", "model_gateway", "bedrock"]
     model_id: str = field(default_factory=default_model_id)
     base_url: str = field(default_factory=default_base_url)
     temperature: float = 0.0
+    region: str | None = None   # bedrock only
+
+
+PAID_AWS_KEY = "DATAINSIGHTS_PAID_AWS_AUTHORIZED"
 
 
 def get_model(cfg: ModelConfig):
@@ -89,6 +102,23 @@ def get_model(cfg: ModelConfig):
         from strands.models.ollama import OllamaModel
 
         return OllamaModel(host=cfg.base_url, model_id=cfg.model_id, temperature=cfg.temperature)
+
+    if cfg.mode == "bedrock":
+        if os.environ.get(PAID_AWS_KEY) != "1":
+            raise PermissionError(
+                f"mode='bedrock' refused: {PAID_AWS_KEY}=1 is not set. Bedrock is authorized only "
+                "inside the AgentCore deployment (infra/terraform sets it there); never on a laptop, "
+                "the dashboard, or CI. Use narrate=false for the deterministic template instead.")
+        from strands.models.bedrock import BedrockModel
+
+        guardrail = {}
+        if os.environ.get("DATAINSIGHTS_BEDROCK_GUARDRAIL_ID"):
+            # Terraform's Bedrock guardrail (infra/terraform/modules/agent_runtime):
+            # masks client identifiers in anything the model reads or writes.
+            guardrail = {"guardrail_id": os.environ["DATAINSIGHTS_BEDROCK_GUARDRAIL_ID"],
+                         "guardrail_version": os.environ.get("DATAINSIGHTS_BEDROCK_GUARDRAIL_VERSION", "DRAFT")}
+        return BedrockModel(model_id=cfg.model_id, region_name=cfg.region or os.environ.get("AWS_REGION"),
+                            temperature=cfg.temperature, **guardrail)
 
     raise NotImplementedError(
         "mode='model_gateway' is contract-only, NOT RUN. Per CLAUDE.md: no "

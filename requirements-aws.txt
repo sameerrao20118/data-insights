@@ -1,0 +1,7 @@
+# AWS deployment only (Dockerfile; docs/aws_deployment.md). Not needed to run
+# anything locally -- requirements.txt stays the local, no-cloud set.
+# Versions verified to install together on 2026-10-23.
+bedrock-agentcore==1.23.0
+boto3==1.43.83
+PyAthena==4.2.1
+aws-opentelemetry-distro==0.21.0

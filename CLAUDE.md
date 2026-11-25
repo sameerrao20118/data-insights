@@ -21,16 +21,23 @@ see `docs/current_state.md`. For the pipeline and module layout: see
   both as required, not either/or. If you need schema info that's mixed
   with label-generation code, ask for a sanitized extraction instead of
   reading the file.
-- **No paid model or cloud calls.** No Snowflake Cortex/AI_COMPLETE, no
-  Bedrock, no hosted judge/embedding endpoint, no paid fallback. Local
-  Ollama only (`OLLAMA_NO_CLOUD=1`, no remote routing). If Ollama is
+- **No paid model or cloud calls — one scoped exception.** No Snowflake
+  Cortex/AI_COMPLETE, no hosted judge/embedding endpoint, no paid
+  fallback. Local Ollama only (`OLLAMA_NO_CLOUD=1`, no remote routing)
+  for every local profile, the dashboard, tests and CI. If Ollama is
   unavailable, fall back to the deterministic template — never to a paid
-  provider.
+  provider. **Exception (authorized 2026-10-23):** Amazon Bedrock, inside
+  the AgentCore deployment only — `config/profiles/fdm_agentcore.yaml`
+  (dated `cost.paid_authorization`) AND `DATAINSIGHTS_PAID_AWS_AUTHORIZED=1`,
+  which only `infra/terraform` sets on the runtime. Don't widen it: no
+  Bedrock from any other profile, no second model, no paid fallback. See
+  `docs/aws_deployment.md`.
 - **No production deployment or external communication.** No emails, no
-  CRM writes, no AWS resource provisioning, no converting the Snowflake
-  trial to paid. AWS/Bedrock/AgentCore adapters are contract-and-mock only
-  until explicitly authorized; mark real integration as NOT RUN until it
-  actually runs.
+  CRM writes, no converting the Snowflake trial to paid. **AWS
+  provisioning is authorized (2026-10-23) only as `infra/terraform`,
+  planned/applied by the owner through HCP Terraform into their own
+  account** — never applied from a session, no ad-hoc `aws` CLI resource
+  creation. Mark real AWS integration as NOT RUN until it actually runs.
 - **Keep source/detector/ranking/narrative/evaluator roles separate.**
   The detector and narrator never see ground truth; only
   `evaluation/evaluate.py` does, and it does not feed back into detection

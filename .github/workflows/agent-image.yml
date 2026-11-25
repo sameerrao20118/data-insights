@@ -1,0 +1,96 @@
+# Build the AgentCore agent image, prove it carries no data, push it to ECR,
+# and hand the new tag to the 30-agents HCP Terraform workspace
+# (docs/aws_deployment.md). Keyless on both sides: GitHub OIDC -> AWS, and
+# an HCP Terraform team token for the variable update.
+#
+# Repository settings this needs (Settings -> Secrets and variables -> Actions):
+#   vars.AWS_REGION                  e.g. us-east-1
+#   vars.AWS_IMAGE_PUSH_ROLE_ARN     10-foundation output github_image_push_role_arn
+#   vars.ECR_REPOSITORY_URL          10-foundation output ecr_repository.url
+#   vars.TFC_AGENTS_WORKSPACE_ID     bootstrap output agents_workspace_id
+#   secrets.TF_API_TOKEN             HCP Terraform team token (write on the project)
+# Until AWS_IMAGE_PUSH_ROLE_ARN is set the job is skipped, so this workflow
+# is inert in a fork or before the foundation exists.
+
+name: agent-image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - requirements.txt
+      - requirements-aws.txt
+      - agents/**
+      - datainsights/**
+      - detection_engine/**
+      - external_events/*.py
+      - config/**
+      - prompts/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: agent-image
+  cancel-in-progress: false
+
+jobs:
+  image:
+    if: ${{ vars.AWS_IMAGE_PUSH_ROLE_ARN != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      IMAGE: ${{ vars.ECR_REPOSITORY_URL }}:${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build (linux/arm64 -- AgentCore runs ARM64 only)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          load: true
+          provenance: false
+          tags: ${{ env.IMAGE }}
+
+      - name: Prove the image contains no data and no labels
+        run: |
+          hits=$(docker run --rm --platform linux/arm64 --entrypoint sh "$IMAGE" -c \
+            'find /app \( -name "*.csv" -o -name "*.parquet" -o -path "*protected_evaluator_only*" -o -path "*output_fdm*" \) -print')
+          if [ -n "$hits" ]; then echo "data found in image:"; echo "$hits"; exit 1; fi
+          docker run --rm --platform linux/arm64 --entrypoint python "$IMAGE" -c \
+            "import agents.entrypoint as e; assert e.app is not None; print('entrypoint imports, AgentCore app present')"
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_IMAGE_PUSH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Push (immutable tag = commit sha)
+        run: docker push "$IMAGE"
+
+      - name: Point the 30-agents workspace at the new tag and queue a plan
+        env:
+          TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+          WS: ${{ vars.TFC_AGENTS_WORKSPACE_ID }}
+        run: |
+          api=https://app.terraform.io/api/v2
+          auth=(-H "Authorization: Bearer $TF_API_TOKEN" -H "Content-Type: application/vnd.api+json")
+          var_id=$(curl -sf "${auth[@]}" "$api/workspaces/$WS/vars" | jq -r '.data[] | select(.attributes.key=="agent_image_tag") | .id')
+          [ -n "$var_id" ] || { echo "agent_image_tag variable not found -- run infra/terraform/bootstrap"; exit 1; }
+          curl -sf "${auth[@]}" -X PATCH "$api/workspaces/$WS/vars/$var_id" \
+            -d "{\"data\":{\"type\":\"vars\",\"id\":\"$var_id\",\"attributes\":{\"value\":\"${GITHUB_SHA}\"}}}" > /dev/null
+          curl -sf "${auth[@]}" -X POST "$api/runs" -d "{\"data\":{\"type\":\"runs\",\"attributes\":{\"message\":\"agent image ${GITHUB_SHA}\"},\"relationships\":{\"workspace\":{\"data\":{\"type\":\"workspaces\",\"id\":\"$WS\"}}}}}" \
+            | jq -r '"queued run " + .data.id + " -- confirm it in HCP Terraform"'

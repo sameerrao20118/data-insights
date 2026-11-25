@@ -1,0 +1,442 @@
+{
+  "domains": [
+    "kernel",
+    "lending"
+  ],
+  "generated_from": "config/entities_fdm.yaml",
+  "tables": [
+    {
+      "columns": [
+        {
+          "name": "prty_id",
+          "nullable": false,
+          "source_name": "PRTY_ID",
+          "type": "string"
+        },
+        {
+          "name": "effective_start_dt",
+          "nullable": false,
+          "source_name": "EFFECTIVE_START_DT",
+          "type": "date"
+        },
+        {
+          "name": "effective_end_dt",
+          "nullable": true,
+          "source_name": "EFFECTIVE_END_DT",
+          "type": "date"
+        },
+        {
+          "name": "prty_typ_cd",
+          "nullable": false,
+          "source_name": "PRTY_TYP_CD",
+          "type": "string"
+        },
+        {
+          "name": "prty_sbtyp_cd",
+          "nullable": false,
+          "source_name": "PRTY_SBTYP_CD",
+          "type": "string"
+        },
+        {
+          "name": "rsk_grd_cd",
+          "nullable": false,
+          "source_name": "RSK_GRD_CD",
+          "type": "string"
+        },
+        {
+          "name": "rsk_grd_val",
+          "nullable": false,
+          "source_name": "RSK_GRD_VAL",
+          "type": "bigint"
+        },
+        {
+          "name": "rsk_grd_dt",
+          "nullable": false,
+          "source_name": "RSK_GRD_DT",
+          "type": "date"
+        },
+        {
+          "name": "prty_sgmnt_cd",
+          "nullable": false,
+          "source_name": "PRTY_SGMNT_CD",
+          "type": "string"
+        },
+        {
+          "name": "high_rsk_cust_ind",
+          "nullable": false,
+          "source_name": "HIGH_RSK_CUST_IND",
+          "type": "string"
+        },
+        {
+          "name": "rltnshp_mgr_id",
+          "nullable": false,
+          "source_name": "RLTNSHP_MGR_ID",
+          "type": "string"
+        }
+      ],
+      "domain": "kernel",
+      "entity": "PARTY",
+      "event_time_field": "effective_start_dt",
+      "primary_key": [
+        "prty_id",
+        "effective_start_dt"
+      ],
+      "table": "party"
+    },
+    {
+      "columns": [
+        {
+          "name": "prty_id",
+          "nullable": false,
+          "source_name": "PRTY_ID",
+          "type": "string"
+        },
+        {
+          "name": "nace_section_cd",
+          "nullable": false,
+          "source_name": "NACE_SECTION_CD",
+          "type": "string"
+        },
+        {
+          "name": "nace_code",
+          "nullable": false,
+          "source_name": "NACE_CODE",
+          "type": "string"
+        },
+        {
+          "name": "sector_nm",
+          "nullable": false,
+          "source_name": "SECTOR_NM",
+          "type": "string"
+        }
+      ],
+      "domain": "kernel",
+      "entity": "PARTY_DEMOGRAPHIC",
+      "event_time_field": null,
+      "primary_key": [
+        "prty_id"
+      ],
+      "table": "party_demographic"
+    },
+    {
+      "columns": [
+        {
+          "name": "prty_id",
+          "nullable": false,
+          "source_name": "PRTY_ID",
+          "type": "string"
+        },
+        {
+          "name": "country_cd",
+          "nullable": false,
+          "source_name": "COUNTRY_CD",
+          "type": "string"
+        }
+      ],
+      "domain": "kernel",
+      "entity": "PARTY_LOCATOR",
+      "event_time_field": null,
+      "primary_key": [
+        "prty_id"
+      ],
+      "table": "party_locator"
+    },
+    {
+      "columns": [
+        {
+          "name": "prty_id",
+          "nullable": false,
+          "source_name": "PRTY_ID",
+          "type": "string"
+        },
+        {
+          "name": "agrmnt_id",
+          "nullable": false,
+          "source_name": "AGRMNT_ID",
+          "type": "string"
+        },
+        {
+          "name": "prty_agrmnt_role_cd",
+          "nullable": false,
+          "source_name": "PRTY_AGRMNT_ROLE_CD",
+          "type": "string"
+        }
+      ],
+      "domain": "kernel",
+      "entity": "PARTY_AGREEMENT",
+      "event_time_field": null,
+      "primary_key": [
+        "prty_id",
+        "agrmnt_id"
+      ],
+      "table": "party_agreement"
+    },
+    {
+      "columns": [
+        {
+          "name": "agrmnt_id",
+          "nullable": false,
+          "source_name": "AGRMNT_ID",
+          "type": "string"
+        },
+        {
+          "name": "effective_start_dt",
+          "nullable": false,
+          "source_name": "EFFECTIVE_START_DT",
+          "type": "date"
+        },
+        {
+          "name": "effective_end_dt",
+          "nullable": true,
+          "source_name": "EFFECTIVE_END_DT",
+          "type": "date"
+        },
+        {
+          "name": "agrmnt_open_dt",
+          "nullable": false,
+          "source_name": "AGRMNT_OPEN_DT",
+          "type": "date"
+        },
+        {
+          "name": "agrmnt_close_dt",
+          "nullable": true,
+          "source_name": "AGRMNT_CLOSE_DT",
+          "type": "date"
+        },
+        {
+          "name": "agrmnt_typ_cd",
+          "nullable": false,
+          "source_name": "AGRMNT_TYP_CD",
+          "type": "string"
+        },
+        {
+          "name": "agrmnt_sbtyp_cd",
+          "nullable": false,
+          "source_name": "AGRMNT_SBTYP_CD",
+          "type": "string"
+        },
+        {
+          "name": "agrmnt_orig_lim",
+          "nullable": true,
+          "source_name": "AGRMNT_ORIG_LIM",
+          "type": "double"
+        },
+        {
+          "name": "agrmnt_purp_cd",
+          "nullable": false,
+          "source_name": "AGRMNT_PURP_CD",
+          "type": "string"
+        }
+      ],
+      "domain": "kernel",
+      "entity": "AGREEMENT",
+      "event_time_field": null,
+      "primary_key": [
+        "agrmnt_id",
+        "effective_start_dt"
+      ],
+      "table": "agreement"
+    },
+    {
+      "columns": [
+        {
+          "name": "agrmnt_id",
+          "nullable": false,
+          "source_name": "AGRMNT_ID",
+          "type": "string"
+        },
+        {
+          "name": "agrmnt_dly_bal_strt_dttm",
+          "nullable": false,
+          "source_name": "AGRMNT_DLY_BAL_STRT_DTTM",
+          "type": "date"
+        },
+        {
+          "name": "agrmnt_ldgr_bal_amt",
+          "nullable": false,
+          "source_name": "AGRMNT_LDGR_BAL_AMT",
+          "type": "double"
+        },
+        {
+          "name": "agrmnt_bal_cury_cd",
+          "nullable": false,
+          "source_name": "AGRMNT_BAL_CURY_CD",
+          "type": "string"
+        }
+      ],
+      "domain": "kernel",
+      "entity": "AGREEMENT_DAILY_BALANCE",
+      "event_time_field": "agrmnt_dly_bal_strt_dttm",
+      "primary_key": [
+        "agrmnt_id",
+        "agrmnt_dly_bal_strt_dttm"
+      ],
+      "table": "agreement_daily_balance"
+    },
+    {
+      "columns": [
+        {
+          "name": "agrmnt_id",
+          "nullable": false,
+          "source_name": "AGRMNT_ID",
+          "type": "string"
+        },
+        {
+          "name": "mort_fxed_rt_end_dt",
+          "nullable": true,
+          "source_name": "MORT_FXED_RT_END_DT",
+          "type": "date"
+        }
+      ],
+      "domain": "lending",
+      "entity": "MORTGAGE_AGREEMENT",
+      "event_time_field": null,
+      "primary_key": [
+        "agrmnt_id"
+      ],
+      "table": "mortgage_agreement"
+    },
+    {
+      "columns": [
+        {
+          "name": "evnt_id",
+          "nullable": false,
+          "source_name": "EVNT_ID",
+          "type": "string"
+        },
+        {
+          "name": "agrmnt_id_trn_acct",
+          "nullable": false,
+          "source_name": "AGRMNT_ID_TRN_ACCT",
+          "type": "string"
+        },
+        {
+          "name": "fin_evnt_pstd_dt",
+          "nullable": false,
+          "source_name": "FIN_EVNT_PSTD_DT",
+          "type": "date"
+        },
+        {
+          "name": "fin_evnt_amt",
+          "nullable": false,
+          "source_name": "FIN_EVNT_AMT",
+          "type": "double"
+        },
+        {
+          "name": "fin_evnt_cury_cd",
+          "nullable": false,
+          "source_name": "FIN_EVNT_CURY_CD",
+          "type": "string"
+        },
+        {
+          "name": "fin_evnt_sbtyp_cd",
+          "nullable": false,
+          "source_name": "FIN_EVNT_SBTYP_CD",
+          "type": "string"
+        },
+        {
+          "name": "fin_evnt_typ_id",
+          "nullable": false,
+          "source_name": "FIN_EVNT_TYP_ID",
+          "type": "string"
+        }
+      ],
+      "domain": "kernel",
+      "entity": "EVENT_FINANCIAL",
+      "event_time_field": "fin_evnt_pstd_dt",
+      "primary_key": [
+        "evnt_id"
+      ],
+      "table": "event_financial"
+    },
+    {
+      "columns": [
+        {
+          "name": "cltrl_item_id",
+          "nullable": false,
+          "source_name": "CLTRL_ITEM_ID",
+          "type": "string"
+        },
+        {
+          "name": "cltrl_item_typ_cd",
+          "nullable": false,
+          "source_name": "CLTRL_ITEM_TYP_CD",
+          "type": "string"
+        }
+      ],
+      "domain": "lending",
+      "entity": "COLLATERAL_ITEM",
+      "event_time_field": null,
+      "primary_key": [
+        "cltrl_item_id"
+      ],
+      "table": "collateral_item"
+    },
+    {
+      "columns": [
+        {
+          "name": "agrmnt_id",
+          "nullable": false,
+          "source_name": "AGRMNT_ID",
+          "type": "string"
+        },
+        {
+          "name": "cltrl_item_id",
+          "nullable": false,
+          "source_name": "CLTRL_ITEM_ID",
+          "type": "string"
+        }
+      ],
+      "domain": "lending",
+      "entity": "AGREEMENT_COLLATERAL_ITEM",
+      "event_time_field": null,
+      "primary_key": [
+        "agrmnt_id",
+        "cltrl_item_id"
+      ],
+      "table": "agreement_collateral_item"
+    },
+    {
+      "columns": [
+        {
+          "name": "cltrl_item_id",
+          "nullable": false,
+          "source_name": "CLTRL_ITEM_ID",
+          "type": "string"
+        },
+        {
+          "name": "effective_start_dt",
+          "nullable": false,
+          "source_name": "EFFECTIVE_START_DT",
+          "type": "date"
+        },
+        {
+          "name": "effective_end_dt",
+          "nullable": true,
+          "source_name": "EFFECTIVE_END_DT",
+          "type": "date"
+        },
+        {
+          "name": "cltrl_val_amt",
+          "nullable": false,
+          "source_name": "CLTRL_VAL_AMT",
+          "type": "double"
+        },
+        {
+          "name": "cltrl_valutn_mthd_cd",
+          "nullable": false,
+          "source_name": "CLTRL_VALUTN_MTHD_CD",
+          "type": "string"
+        }
+      ],
+      "domain": "lending",
+      "entity": "COLLATERAL_ITEM_VALUE",
+      "event_time_field": null,
+      "primary_key": [
+        "cltrl_item_id",
+        "effective_start_dt"
+      ],
+      "table": "collateral_item_value"
+    }
+  ]
+}

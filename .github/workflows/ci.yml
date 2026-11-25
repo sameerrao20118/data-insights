@@ -45,7 +45,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -r requirements.txt
+      # requirements-aws.txt: the AWS-path tests (tests/test_aws_*.py) run
+      # against fakes -- installing the SDKs makes no call to AWS.
+      - run: pip install -r requirements.txt -r requirements-aws.txt
 
       - name: Generate the legacy-schema dataset (config/bindings/legacy.yaml)
         run: |
@@ -65,3 +67,23 @@ jobs:
       # grows without a matching new live test, someone will see it here.
       - name: Report what was deselected
         run: python -m pytest tests/ -q -k "not live" --collect-only 2>/dev/null | tail -3
+
+  # infra/terraform: format + validate every root module against the
+  # pinned provider schemas. -backend=false: no HCP Terraform, no AWS
+  # credentials, nothing planned. Plans/applies happen in HCP Terraform.
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.14.0"
+      - run: terraform fmt -check -recursive infra/terraform
+      - name: validate
+        run: |
+          for d in infra/terraform/bootstrap infra/terraform/stacks/*; do
+            echo "::group::$d"
+            terraform -chdir="$d" init -backend=false -input=false
+            terraform -chdir="$d" validate
+            echo "::endgroup::"
+          done

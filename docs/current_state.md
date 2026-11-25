@@ -70,6 +70,17 @@ recommendations 1-8 of 15; 10-15 (SQL/Spark executors) are not started.
 See `docs/signal_discovery_design.md` for the full scope table and
 `docs/HANDOFF_signal_discovery.md` to resume the work.
 
+**AWS deployment, written, NOT RUN (2026-10-23).** `infra/terraform` is
+the HCP Terraform route into the owner's own AWS account: bootstrap
+(OIDC, workspaces), 10-foundation, 20-data-mesh (Glue data products per
+contract domain + SageMaker Unified Studio producer/consumer projects),
+30-agents (AgentCore Runtime). Every stack passes `terraform validate`.
+Nothing has been planned or applied. The `fdm_agentcore` profile is now
+fully wired: Athena via `glue_athena`, Bedrock (the one scoped paid
+exception, two-key gated), S3 events and outputs, a DynamoDB run ledger.
+`tests/test_aws_read_path.py` proves the whole book is identical through
+the lake-shaped read path. Runbook: `docs/aws_deployment.md`.
+
 **Suite:** run `pytest tests/ -q -k "not live"` — ~770 tests, ~1 min, no
 model needed. The dashboard's ten pages each render under AppTest in it. Live tests need local Ollama.
 

@@ -16,6 +16,7 @@ without touching any of these entry points again.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -39,6 +40,11 @@ class Runtime:
     out_dir: str
     contract_path: str
     binding_name: str | None        # config/bindings/<name>.yaml -- None until Phase 1 lands
+    # AWS (datainsights/aws_backends.py): set only when the profile selects
+    # output.backend=s3 / state.backend=dynamodb. out_dir/state_db_path are
+    # then an ephemeral scratch directory the session publishes from.
+    output_s3_uri: str | None = None
+    ledger_table: str | None = None
 
 
 def _build_source(profile: Profile) -> DataSource:
@@ -140,9 +146,10 @@ def build_runtime(profile_name: str | None = None, *, data_dir_override: str | N
         rules = merge_rules(rules, load_binding(profile.source.binding).rules)
 
     model_config = ModelConfig(
-        mode="local" if profile.llm.provider == "ollama" else "model_gateway",
+        mode={"ollama": "local", "bedrock": "bedrock"}.get(profile.llm.provider, "model_gateway"),
         model_id=profile.llm.model,
         base_url=profile.llm.base_url or "http://localhost:11434",
+        region=profile.llm.region,
     )
 
     event_source_path = None
@@ -151,22 +158,33 @@ def build_runtime(profile_name: str | None = None, *, data_dir_override: str | N
     elif profile.event_source and profile.event_source.backend == "csv":
         p = profile.event_source.path
         event_source_path = p if os.path.isabs(p) else str(REPO_ROOT / p)
+    elif profile.event_source and profile.event_source.backend == "s3":
+        from datainsights.aws_backends import fetch_s3_object, scratch_dir
+
+        event_source_path = fetch_s3_object(profile.event_source.s3_uri, scratch_dir("events"))
     elif profile.event_source:
         raise NotImplementedError(
             f"event_source.backend={profile.event_source.backend!r} is contract-only "
-            "(docs/generalization_plan.md Phase 3) -- only 'csv' is implemented."
+            "(docs/generalization_plan.md Phase 3) -- only 'csv' and 's3' are implemented."
         )
 
+    # dynamodb state / s3 output (docs/aws_deployment.md): the pipeline keeps
+    # writing sqlite + files locally -- to session scratch -- and
+    # datainsights/aws_backends.py moves them to DynamoDB/S3.
     state_path = profile.state.path or "var/agent_traces.db"
+    ledger_table = None
     if profile.state.backend == "dynamodb":
-        raise NotImplementedError(
-            "state.backend='dynamodb' is contract-only (docs/generalization_plan.md Phase 3)."
-        )
+        from datainsights.aws_backends import scratch_dir
+
+        state_path = os.path.join(scratch_dir("traces"), "agent_traces.db")
+        ledger_table = profile.state.table_name
     out_dir = profile.output.path or "var/insights"
+    output_s3_uri = None
     if profile.output.backend == "s3":
-        raise NotImplementedError(
-            "output.backend='s3' is contract-only (docs/generalization_plan.md Phase 3)."
-        )
+        from datainsights.aws_backends import scratch_dir
+
+        out_dir = scratch_dir("insights")
+        output_s3_uri = profile.output.s3_uri
 
     return Runtime(
         profile=profile,
@@ -178,6 +196,8 @@ def build_runtime(profile_name: str | None = None, *, data_dir_override: str | N
         out_dir=str(REPO_ROOT / out_dir) if not os.path.isabs(out_dir) else out_dir,
         contract_path=str(REPO_ROOT / profile.source.entity_map_ref),
         binding_name=profile.source.binding,
+        output_s3_uri=output_s3_uri,
+        ledger_table=ledger_table,
     )
 
 
@@ -202,4 +222,27 @@ def _load_fdm_profile(name: str) -> Profile:
         )
     with open(path) as f:
         raw = yaml.safe_load(f)
-    return Profile.model_validate(raw)
+    return Profile.model_validate(_expand_env(raw, name))
+
+
+_ENV_REF = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
+
+
+def _expand_env(node, profile_name: str):
+    """`${VAR}` in a profile value is read from the environment -- how a
+    deployed profile names a bucket, table or model id that only exists
+    once Terraform has created it (config/profiles/fdm_agentcore.yaml). An
+    unset variable is an error naming it: never an empty string, never a
+    default that looks like it works."""
+    if isinstance(node, dict):
+        return {k: _expand_env(v, profile_name) for k, v in node.items()}
+    if isinstance(node, list):
+        return [_expand_env(v, profile_name) for v in node]
+    if isinstance(node, str):
+        missing = [v for v in _ENV_REF.findall(node) if not os.environ.get(v)]
+        if missing:
+            raise EnvironmentError(
+                f"profile {profile_name!r} needs environment variable(s) {', '.join(missing)} -- on AWS "
+                f"infra/terraform sets them on the AgentCore Runtime; locally, export them yourself.")
+        return _ENV_REF.sub(lambda m: os.environ[m.group(1)], node)
+    return node

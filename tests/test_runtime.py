@@ -103,25 +103,39 @@ def _base_profile(**overrides) -> Profile:
     return Profile(**fields)
 
 
-def test_dynamodb_state_backend_validates_but_build_runtime_raises(tmp_path, monkeypatch):
+def test_dynamodb_state_backend_uses_session_scratch_and_names_the_ledger(tmp_path, monkeypatch):
+    """docs/aws_deployment.md: dynamodb state keeps the in-process sqlite
+    files in ephemeral scratch and records runs in the DynamoDB ledger --
+    it never writes to the repo's var/ directory."""
+    monkeypatch.setenv("DATAINSIGHTS_SCRATCH_DIR", str(tmp_path))
     monkeypatch.setattr("datainsights.runtime._load_fdm_profile",
                         lambda name: _base_profile(state=StateConfig(backend="dynamodb", table_name="x")))
-    with pytest.raises(NotImplementedError, match="dynamodb"):
-        build_runtime("test")
+    rt = build_runtime("test")
+    assert rt.ledger_table == "x"
+    assert rt.state_db_path.startswith(str(tmp_path))
 
 
-def test_s3_output_backend_validates_but_build_runtime_raises(monkeypatch):
+def test_s3_output_backend_writes_to_scratch_and_names_the_destination(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATAINSIGHTS_SCRATCH_DIR", str(tmp_path))
     monkeypatch.setattr("datainsights.runtime._load_fdm_profile",
-                        lambda name: _base_profile(output=OutputConfig(backend="s3", s3_uri="s3://x")))
-    with pytest.raises(NotImplementedError, match="s3"):
-        build_runtime("test")
+                        lambda name: _base_profile(output=OutputConfig(backend="s3", s3_uri="s3://x/insights")))
+    rt = build_runtime("test")
+    assert rt.output_s3_uri == "s3://x/insights" and rt.out_dir.startswith(str(tmp_path))
 
 
-def test_event_source_backend_other_than_csv_validates_but_build_runtime_raises(monkeypatch):
+def test_s3_event_source_must_name_an_object_not_a_prefix(monkeypatch):
     monkeypatch.setattr(
         "datainsights.runtime._load_fdm_profile",
         lambda name: _base_profile(event_source=EventSourceConfig(backend="s3", s3_uri="s3://x")))
-    with pytest.raises(NotImplementedError, match="s3"):
+    with pytest.raises(ValueError, match="prefix"):
+        build_runtime("test")
+
+
+def test_snowflake_event_source_is_still_contract_only(monkeypatch):
+    monkeypatch.setattr(
+        "datainsights.runtime._load_fdm_profile",
+        lambda name: _base_profile(event_source=EventSourceConfig(backend="snowflake", connection_ref="x")))
+    with pytest.raises(NotImplementedError, match="snowflake"):
         build_runtime("test")
 
 

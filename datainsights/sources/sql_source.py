@@ -28,6 +28,7 @@ Nothing here provisions, writes, or converts anything (CLAUDE.md).
 from __future__ import annotations
 
 import os
+import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Callable, Optional
 
@@ -53,6 +54,29 @@ _AGG_SQL = {"mean": "AVG", "sum": "SUM", "count": "COUNT"}
 def _q(dialect: str, ident: str) -> str:
     q = DIALECTS[dialect]["quote"]
     return f"[{ident}]" if q == "[" else f'{q}{ident}{q}'
+
+
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}")
+
+
+def _athena_params(sql: str, params: list) -> tuple[str, dict | None]:
+    """pyathena takes only named pyformat parameters, and Athena (Trino)
+    will not compare a DATE column to a varchar -- so `%s` becomes
+    `%(pN)s` and every ISO-date parameter becomes a date, which pyathena
+    renders as DATE 'YYYY-MM-DD'. Every time field in the FDM lake is a
+    DATE (datainsights/deploy/lake_contract.py), so a datetime's time part
+    is dropped, never compared."""
+    if not params:
+        return sql, None
+    parts = sql.split("%s")
+    if len(parts) - 1 != len(params):
+        raise DataSourceError(f"athena: {len(parts) - 1} placeholders for {len(params)} parameters")
+    named = {}
+    for i, v in enumerate(params):
+        if isinstance(v, str) and _ISO_DATE.match(v):
+            v = date.fromisoformat(v[:10])
+        named[f"p{i}"] = v
+    return "".join(part + (f"%(p{i})s" if i < len(params) else "") for i, part in enumerate(parts)), named
 
 
 class SqlSource(DataSource):
@@ -131,6 +155,8 @@ class SqlSource(DataSource):
     def _execute(self, sql: str, params: list) -> pd.DataFrame:
         con = self._connect()
         cur = con.cursor() if hasattr(con, "cursor") else con
+        if self.dialect == "athena":
+            sql, params = _athena_params(sql, params)
         cur.execute(sql, params)
         if hasattr(cur, "fetch_pandas_all"):
             return cur.fetch_pandas_all()
@@ -225,7 +251,12 @@ class SqlSource(DataSource):
 
 class AthenaSource(SqlSource):
     """Glue catalog + Athena, through pyathena -- the same SQL, `athena`
-    dialect. `default_schema` is the Glue database. NOT RUN."""
+    dialect. `default_schema` is the Glue database; `domain_schema_map`
+    sends each contract domain to its own Glue database (one per data-mesh
+    domain, infra/terraform/stacks/20-data-mesh). Needs <CONNECTION_REF>_REGION
+    (and _S3_STAGING_DIR unless the workgroup enforces its own result
+    location). tests/test_aws_read_path.py proves the read path against
+    lake-shaped DuckDB; real Athena is NOT RUN."""
 
     def __init__(self, entity_map_ref: str, *, glue_database: str, connection_ref: str | None = None,
                  athena_workgroup: str | None = None, **kw):

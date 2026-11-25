@@ -1,0 +1,15 @@
+# Never ship data in the agent image (Dockerfile header). Allow-list style:
+# ignore everything, then re-include only what the Dockerfile COPYs.
+*
+!requirements.txt
+!requirements-aws.txt
+!agents/
+!detection_engine/
+!datainsights/
+!external_events/*.py
+!config/
+!prompts/
+**/__pycache__
+**/*.pyc
+**/protected_evaluator_only/**
+**/output*/**

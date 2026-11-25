@@ -1,0 +1,8 @@
+# cp terraform.tfvars.example terraform.tfvars   (terraform.tfvars is gitignored)
+tfc_organization             = "your-hcp-org"
+github_repository            = "your-github-user/datainsights"
+github_app_installation_name = "your-github-user"
+aws_region                   = "us-east-1"
+lake_admin_arns              = ["arn:aws:iam::123456789012:role/YourConsoleAdminRole"]
+bedrock_model_id             = "us.REPLACE.with-a-model-from-list-inference-profiles"
+budget_alert_emails          = ["you@example.com"]

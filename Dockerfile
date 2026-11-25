@@ -1,39 +1,39 @@
-# CONTRACT ONLY -- NEVER BUILT OR PUSHED THIS SESSION.
+# AgentCore Runtime image (docs/aws_deployment.md). Built for linux/arm64 --
+# AgentCore Runtime runs ARM64 containers only -- by
+# .github/workflows/agent-image.yml, pushed to the ECR repository that
+# infra/terraform/stacks/10-foundation creates, and run by the
+# aws_bedrockagentcore_agent_runtime in infra/terraform/stacks/30-agents.
 #
-# Packaging shape for docs/decision_record.md's Stage 3 ("Swap OllamaModel
-# -> internal Model Gateway. Containerise. Enter governance with a working
-# artefact and evidence."). This exists so the shape is agreed now, not
-# invented later under governance time pressure -- it is not a statement
-# that this project has containerised, deployed, or run anything in AWS.
-# Per CLAUDE.md: "AWS/Bedrock/AgentCore adapters are contract-and-mock
-# only until explicitly authorized."
+# What is NOT in this image, on purpose: any data. The agents read the
+# curated lake through Athena; generated datasets, holdouts and every
+# protected_evaluator_only path are excluded by .dockerignore AND are never
+# COPY'd (only the code packages below are). The image cannot see labels.
 #
-# Verified this session (not assumed): all packages below dry-run install
-# cleanly on this machine against the exact versions confirmed on the
-# bank's Artifactory (docs/decision_record.md Tab 7).
+# NOT RUN: never built or pushed from this repo until you run the workflow.
 
-FROM python:3.12-slim
+FROM --platform=linux/arm64 python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DATAINSIGHTS_SCRATCH_DIR=/tmp/datainsights
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt requirements-aws.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-aws.txt
 
+# Code and config only -- the runtime needs nothing else.
 COPY agents/ agents/
 COPY detection_engine/ detection_engine/
 COPY datainsights/ datainsights/
+COPY external_events/*.py external_events/
 COPY config/ config/
-COPY data_generator/ data_generator/
+COPY prompts/ prompts/
 
-# Stage 3 only: agents/model_factory.ModelConfig.mode="model_gateway"
-# replaces the local Ollama call with the bank's internal Model Gateway --
-# that branch is currently NotImplementedError by design (see
-# agents/model_factory.py) until governance sign-off exists. No Ollama
-# server runs inside this image; Stage 1/2 local development uses this
-# machine's own Ollama installation directly, outside any container.
+RUN useradd --uid 10001 --no-create-home agent && mkdir -p /tmp/datainsights && chown agent /tmp/datainsights
+USER agent
 
-# AgentCore Runtime supplies its own process entrypoint via
-# bedrock_agentcore.runtime.BedrockAgentCoreApp (see agents/entrypoint.py).
-# This CMD is documentation of the intended shape, not a verified command
-# -- it has never been run.
-CMD ["python", "-m", "agents.entrypoint"]
+# AgentCore Runtime's HTTP contract: POST /invocations, GET /ping on 8080,
+# served by bedrock_agentcore.runtime.BedrockAgentCoreApp (agents/entrypoint.py).
+EXPOSE 8080
+CMD ["opentelemetry-instrument", "python", "-m", "agents.entrypoint"]

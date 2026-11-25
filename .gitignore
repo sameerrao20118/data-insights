@@ -45,3 +45,11 @@ onboarding/proposals/
 # secrets: never committed, any environment
 .env
 .env.*
+
+# Terraform (infra/terraform). Provider lock files ARE committed.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log

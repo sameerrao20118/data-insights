@@ -84,14 +84,14 @@ def test_agentcore_entrypoint_produces_identical_output_to_invoke():
     assert agentcore_entrypoint(payload) == invoke(payload)
 
 
-def test_fdm_agentcore_profile_validates_and_constructs_as_far_as_honestly_possible():
-    """config/profiles/fdm_agentcore.yaml (the AgentCore-shaped
-    counterpart to fdm_local.yaml) must pass every field-level validator
-    in datainsights/config.py and construct up to its first real
-    blocking point -- never silently fall back to local files, and never
-    fail for a config-shape reason (only for the genuinely NOT RUN
-    s3_parquet adapter)."""
+def test_fdm_agentcore_profile_refuses_to_load_without_its_deployment_env(monkeypatch):
+    """config/profiles/fdm_agentcore.yaml names its buckets, tables and
+    model through ${VAR}s that only Terraform sets on the AgentCore
+    Runtime. Without them it must fail naming the variable -- never fall
+    back to local files or a placeholder. (The fully-wired build is
+    tests/test_aws_deployment.py.)"""
     from datainsights.runtime import build_runtime
 
-    with pytest.raises(NotImplementedError, match="s3_parquet"):
+    monkeypatch.delenv("DATAINSIGHTS_GLUE_DB_KERNEL", raising=False)
+    with pytest.raises(EnvironmentError, match="DATAINSIGHTS_GLUE_DB_KERNEL"):
         build_runtime("fdm_agentcore")
